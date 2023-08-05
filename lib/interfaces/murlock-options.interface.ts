@@ -2,7 +2,6 @@ import { ClientOpts } from 'redis';
 
 export interface MurLockModuleOptions {
   redisOptions: ClientOpts;
-  ttl: number;
   wait: number;
   maxAttempts: number;
 }

@@ -3,9 +3,11 @@ import { MurLockService } from './murlock.service';
 import 'reflect-metadata';
 import { MurLockModuleAsyncOptions, MurLockModuleOptions } from './interfaces';
 import { MURLOCK_SERVICE_METADATA_KEY } from './constants';
+import { ClsModule } from 'nestjs-cls';
 
 @Global()
 @Module({
+  imports: [ClsModule],
   providers: [MurLockService],
   exports: [MurLockService],
 })

@@ -4,6 +4,7 @@ export interface MurLockModuleOptions {
   redisOptions: ClientOpts;
   wait: number;
   maxAttempts: number;
+  logLevel: 'none' | 'error' | 'warn' | 'log' | 'debug';
 }
 
 export interface MurLockModuleAsyncOptions {

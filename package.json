@@ -10,8 +10,7 @@
   "scripts": {
     "copy-lua": "ncp lib/lua dist/lua/",
     "build": "tsc && npm run copy-lua",
-    "release": "semantic-release",
-    "changelog": "standard-version"
+    "release": "semantic-release"
   },
   "husky": {
     "hooks": {

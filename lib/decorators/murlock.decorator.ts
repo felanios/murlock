@@ -1,4 +1,4 @@
-import { MURLOCK_KEY_METADATA, MURLOCK_SERVICE_METADATA_KEY } from '../constants';
+import { MURLOCK_SERVICE_METADATA_KEY } from '../constants';
 import { MurLockException } from '../exceptions';
 import { MurLockService } from '../murlock.service';
 
@@ -41,14 +41,14 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
           if (parameterIndex >= 0) {
             const parameterValue = args[parameterIndex];
             if (typeof parameterValue === 'undefined' || parameterValue === null) {
-              throw new Error(`Parameter ${source} is undefined or null.`);
+              throw new MurLockException(`Parameter ${source} is undefined or null.`);
             }
             if (path && typeof parameterValue === 'object' && parameterValue !== null && path in parameterValue) {
               return parameterValue[path];
             }
             return parameterValue instanceof Object ? parameterValue.toString() : parameterValue;
           }
-          throw new Error(`Parameter ${source} not found in method arguments.`);
+          throw new MurLockException(`Parameter ${source} not found in method arguments.`);
         }),
       ];
       return lockKeyElements.join(':');
@@ -59,7 +59,7 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
 
       const murLockService: MurLockService = Reflect.getMetadata(MURLOCK_SERVICE_METADATA_KEY, MurLockService);
       if (!murLockService) {
-        throw new Error('MurLockService is not available.');
+        throw new MurLockException('MurLockService is not available.');
       }
 
       await acquireLock(lockKey, murLockService, releaseTime);
@@ -69,12 +69,6 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
         await releaseLock(lockKey, murLockService);
       }
     };
-
-    Reflect.defineMetadata(
-      MURLOCK_KEY_METADATA,
-      {releaseTime, keyParams},
-      descriptor.value
-      );
       
     return descriptor;
   };

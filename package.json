@@ -11,7 +11,6 @@
     "copy-lua": "ncp lib/lua dist/lua/",
     "build": "tsc && npm run copy-lua",
     "release": "semantic-release",
-    "release-beta": "semantic-release --branches master --tag-format \"${version}-beta\"",
     "changelog": "standard-version"
   },
   "husky": {
@@ -28,20 +27,17 @@
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
-    "@commitlint/cli": "^17.7.1",
-    "@commitlint/config-conventional": "^17.7.0",
-    "@semantic-release/changelog": "^6.0.3",
-    "@semantic-release/commit-analyzer": "^10.0.1",
-    "@semantic-release/exec": "^6.0.3",
+    "@commitlint/cli": "^17.6.5",
+    "@commitlint/config-conventional": "^17.6.5",
+    "@commitlint/core": "^17.6.5",
     "@semantic-release/git": "^10.0.1",
-    "@semantic-release/github": "^9.0.4",
+    "@semantic-release/github": "^9.0.3",
     "@semantic-release/npm": "^10.0.4",
-    "@semantic-release/release-notes-generator": "^11.0.4",
     "@types/node": "^20.3.1",
     "@types/redis": "^2.8.32",
     "husky": "^8.0.3",
     "ncp": "^2.0.0",
-    "semantic-release": "^21.0.7",
+    "semantic-release": "^21.0.5",
     "standard-version": "^9.5.0",
     "typescript": "^5.1.3"
   },

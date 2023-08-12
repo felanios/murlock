@@ -8,9 +8,8 @@
   "private": false,
   "main": "dist/index.js",
   "scripts": {
-    "clean": "del ./dist/*",
     "copy-lua": "ncp lib/lua dist/lua/",
-    "build": "npm run clean && tsc && npm run copy-lua",
+    "build": "tsc && npm run copy-lua",
     "changelog": "standard-version"
   },
   "husky": {
@@ -35,7 +34,6 @@
     "@semantic-release/release-notes-generator": "^11.0.4",
     "@types/node": "^20.3.1",
     "@types/redis": "^2.8.32",
-    "del-cli": "^5.0.0",
     "husky": "^8.0.3",
     "ncp": "^2.0.0",
     "semantic-release": "^21.0.7",

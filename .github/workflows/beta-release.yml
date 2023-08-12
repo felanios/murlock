@@ -24,9 +24,6 @@ jobs:
     - name: Build
       run: npm run build
 
-    - name: Generate Changelog
-      run: npm run changelog
-
     - name: Release Beta
       env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -20,9 +20,6 @@ jobs:
 
     - name: Build
       run: npm run build
-      
-    - name: Generate Changelog
-      run: npm run changelog
 
     - name: Release package
       env:

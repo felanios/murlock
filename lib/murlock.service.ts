@@ -5,6 +5,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { MurLockModuleOptions } from './interfaces';
 import { ClsService } from 'nestjs-cls';
+import { MurLockRedisException, MurLockException } from './exceptions';
 
 /**
  * A service for MurLock to manage locks
@@ -26,7 +27,10 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     this.redisClient = new RedisClient(this.options.redisOptions);
     this.runScriptAsync = promisify(this.redisClient.eval).bind(this.redisClient);
 
-    this.redisClient.on('error', (err) => this.log('error','MurLock Redis Client Error', err));
+    this.redisClient.on('error', (err) =>{
+      this.log('error','MurLock Redis Client Error', err);
+      throw new MurLockRedisException(`MurLock Redis Client Error: ${err.message}`);
+    });
   }
 
   onApplicationShutdown(signal?: string) {
@@ -78,7 +82,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
 
     const attemptLock = async (attemptsRemaining: number): Promise<boolean> => {
       if (attemptsRemaining === 0) {
-        throw new Error(`Failed to obtain lock for key ${lockKey} after ${this.options.maxAttempts} attempts.`);
+        throw new MurLockException(`Failed to obtain lock for key ${lockKey} after ${this.options.maxAttempts} attempts.`);
       }
       try {
         const isLockSuccessful = await this.runScriptAsync(this.lockScript, 1, lockKey, clientId, releaseTime);
@@ -91,8 +95,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
           return attemptLock(attemptsRemaining - 1);
         }
       } catch (error) {
-        this.log('error',`Unexpected error when trying to obtain lock for key ${lockKey}:`, error);
-        return false;
+        throw new MurLockException(`Unexpected error when trying to obtain lock for key ${lockKey}: ${error.message}`);
       }
     };
 
@@ -109,7 +112,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
       const result = await this.runScriptAsync(this.unlockScript, 1, lockKey, clientId);
   
       if (result === 0) {
-        throw new Error(`Failed to release lock for key ${lockKey}`);
+        throw new MurLockException(`Failed to release lock for key ${lockKey}`);
       }
   }
 }

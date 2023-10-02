@@ -103,8 +103,8 @@ function isNumber(value) {
   return false;
 }
 
-function isObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+function isObject(value: any): boolean {
+  return value !== null && value instanceof Object && !Array.isArray(value);
 }
 
 function findParameterValue({ args, source, parameterIndex, path }){

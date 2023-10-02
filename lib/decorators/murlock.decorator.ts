@@ -37,9 +37,9 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
         propertyKey,
         ...keyParams.map((keyParam) => {
           const [source, path] = keyParam.split('.');
-          const parameterIndex = methodParameterNames.indexOf(source);
+          const parameterIndex = isNumber(source) ? Number(source) : methodParameterNames.indexOf(source);
           if (parameterIndex >= 0) {
-            const parameterValue = args[parameterIndex];
+            const parameterValue = findParameterValue({ args, source, parameterIndex, path })
             if (typeof parameterValue === 'undefined' || parameterValue === null) {
               throw new MurLockException(`Parameter ${source} is undefined or null.`);
             }
@@ -93,4 +93,26 @@ async function releaseLock(lockKey: string, murLockService: MurLockService): Pro
   } catch (error) {
     throw new MurLockException(`Failed to release lock for key ${lockKey}: ${error.message}`);
   }
+}
+
+function isNumber(value) {
+  const parsedValue = parseFloat(value);
+  if (!isNaN(parsedValue)) {
+      return true;
+  }
+  return false;
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function findParameterValue({ args, source, parameterIndex, path }){
+  if(isNumber(source) && path){
+      return args[source][path]
+  }
+  if(args.length == 1 && isObject(args[0]) && !path){
+      return args[0][source] 
+  }
+  return args[parameterIndex];
 }

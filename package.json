@@ -43,6 +43,26 @@
   "peerDependencies": {
     "@nestjs/common": "^10.0.0"
   },
+  "release":{
+    "branches": [
+      {
+        "name": "master",
+        "channel": "latest",
+        "release": true
+      },
+      {
+        "name": "beta",
+        "channel": "beta",
+        "prerelease": true
+      }
+    ],
+    "plugins": [
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      "@semantic-release/npm",
+      "@semantic-release/git"
+    ]
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/felanios/murlock.git"

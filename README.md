@@ -151,7 +151,7 @@ We welcome contributions! Please see our contributing guide for more information
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE_FILE_URL).
+This project is licensed under the [MIT License](https://github.com/felanios/murlock/blob/master/LICENSE).
 
 ## Contact
 

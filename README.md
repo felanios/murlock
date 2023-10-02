@@ -55,6 +55,33 @@ export class AppService {
 }
 ```
 
+By default, if there is single wrapped parameter, the property of parameter can be called direcly as it shown
+
+```typescript
+import { MurLock } from 'murlock';
+
+@Injectable()
+export class AppService {
+  @MurLock(5000, 'userId')
+  async someFunction({ userId, firstName, lastName }: { userId: string, firstName: string, lastName: string} ): Promise<void> {
+    // Some critical section that only one request should be able to execute at a time
+  }
+}
+```
+
+If there are multiple wrapped parameter, you can call it by {index of parameter}.{parameter name} as it shown
+```typescript
+import { MurLock } from 'murlock';
+
+@Injectable()
+export class AppService {
+  @MurLock(5000, '0.userId', '1.transactionId')
+  async someFunction({ userId, firstName, lastName }: UserDTO, { balance, transactionId }: TransactionDTO ): Promise<void> {
+    // Some critical section that only one request should be able to execute at a time
+  }
+}
+```
+
 In the example above, the `@MurLock()` decorator will prevent `someFunction()` from being executed concurrently for the same user. If another request comes in for the same user before `someFunction()` has finished executing, it will wait up to 5000 milliseconds (5 seconds) for the lock to be released. If the lock is not released within this time, an `MurLockException` will be thrown.
 
 The parameters to `@MurLock()` are a release time (in milliseconds), followed by any number of key parameters. The key parameters are used to create a unique key for each lock. They should be properties of the parameters of the method. In the example above, 'user.id' is used, which means the lock key will be different for each user ID.

@@ -7,7 +7,12 @@ import { ClsModule } from 'nestjs-cls';
 
 @Global()
 @Module({
-  imports: [ClsModule],
+  imports: [
+    ClsModule.forRoot({
+      global: true,
+      middleware: { mount: true },
+    }),
+  ],
   providers: [MurLockService],
   exports: [MurLockService],
 })

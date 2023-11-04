@@ -70,6 +70,7 @@ export class AppService {
 ```
 
 If there are multiple wrapped parameter, you can call it by {index of parameter}.{parameter name} as it shown
+
 ```typescript
 import { MurLock } from 'murlock';
 
@@ -114,6 +115,82 @@ In the example above, the `ConfigModule` and `ConfigService` are used to provide
 
 For more details on usage and configuration, please refer to the API documentation below.
 
+## Using `MurLockService` Directly
+
+While the `@MurLock()` decorator provides a convenient and declarative way to handle locking within your NestJS application, there may be cases where you need more control over the lock lifecycle. For such cases, `MurLockService` offers a programmatic way to manage locks.
+
+#### Injecting `MurLockService`
+
+First, inject `MurLockService` into your service:
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { MurLockService } from 'murlock';
+
+@Injectable()
+export class YourService {
+  constructor(private murLockService: MurLockService) {}
+  
+  // Your methods where you want to use the lock
+}
+```
+
+#### Acquiring a Lock
+
+You can acquire a lock by calling the `acquireLock` method with a unique `lockKey` and the desired `lockTime`:
+
+```typescript
+async performTaskWithLock() {
+  const lockKey = 'unique_lock_key';
+  const lockTime = 3000; // Duration for which the lock should be held in milliseconds
+
+  try {
+    await this.murLockService.acquireLock(lockKey, lockTime);
+    // Proceed with the operation that requires the lock
+  } catch (error) {
+    // Handle the error if the lock could not be acquired
+    throw error;
+  } finally {
+    // Make sure to release the lock
+    await this.murLockService.releaseLock(lockKey);
+  }
+}
+```
+
+#### Releasing a Lock
+
+To release a lock, use the `releaseLock` method:
+
+```typescript
+await this.murLockService.releaseLock(lockKey);
+```
+
+#### Handling Errors
+
+Make sure to handle exceptions gracefully, especially when you are unable to acquire a lock:
+
+```typescript
+try {
+  // Lock acquisition attempts
+} catch (error) {
+  // Error handling logic
+} finally {
+  // Always release the lock in a finally block
+}
+```
+
+#### Best Practices and Considerations
+
+- Always release locks in a `finally` block to avoid deadlocks.
+- Use meaningful lock keys that are unique to the resources they represent.
+- Keep lock durations as short as possible to prevent system blockage.
+
+Directly using `MurLockService` gives you finer control over lock management but also increases the responsibility to ensure locks are correctly managed throughout your application's lifecycle.
+
+---
+
+This refined section is suitable for developers looking for documentation on using `MurLockService` directly in their projects and adheres to the typical conventions found in README files for open-source projects.
+
 ## API Documentation
 
 ### MurLock(releaseTime: number, ...keyParams: string[])
@@ -155,7 +232,7 @@ This project is licensed under the [MIT License](https://github.com/felanios/mur
 
 ## Contact
 
-If you have any questions or feedback, feel free to contact me at ozmen.eyupfurkan@gmail.com.
+If you have any questions or feedback, feel free to contact me at <ozmen.eyupfurkan@gmail.com>.
 
 ---
 

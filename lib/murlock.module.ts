@@ -17,7 +17,7 @@ import { ClsModule } from 'nestjs-cls';
   exports: [MurLockService],
 })
 export class MurLockModule {
-  static registerSync(options: MurLockModuleOptions): DynamicModule {
+  static forRoot(options: MurLockModuleOptions): DynamicModule {
     return {
       module: MurLockModule,
       providers: [
@@ -39,7 +39,7 @@ export class MurLockModule {
     };
   }
 
-  static registerAsync(options: MurLockModuleAsyncOptions): DynamicModule {
+  static forRootAsync(options: MurLockModuleAsyncOptions): DynamicModule {
     return {
       module: MurLockModule,
       imports: options.imports || [],

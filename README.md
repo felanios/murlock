@@ -23,14 +23,14 @@ npm install --save murlock redis reflect-metadata
 
 MurLock is primarily used through the `@MurLock()` decorator.
 
-First, you need to import and register the `MurLockModule` in your module:
+First, you need to import the `MurLockModule` and set it up in your module using `forRoot`. This method is used for global configuration that can be reused across different parts of your application.
 
 ```typescript
 import { MurLockModule } from 'murlock';
 
 @Module({
   imports: [
-    MurLockModule.registerSync({
+    MurLockModule.forRoot({
       redisOptions: { host: 'localhost', port: 6379 },
       wait: 1000,
       maxAttempts: 3,
@@ -55,7 +55,7 @@ export class AppService {
 }
 ```
 
-By default, if there is single wrapped parameter, the property of parameter can be called direcly as it shown
+By default, if there is single wrapped parameter, the property of parameter can be called directly as it shown
 
 ```typescript
 import { MurLock } from 'murlock';
@@ -96,7 +96,7 @@ import { MurLockModule } from 'murlock';
 
 @Module({
   imports: [
-    MurLockModule.registerAsync({
+    MurLockModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
         redisOptions: configService.get('REDIS_OPTIONS'),

@@ -10,7 +10,7 @@ import { ClsModule } from 'nestjs-cls';
   imports: [
     ClsModule.forRoot({
       global: true,
-      middleware: { mount: true },
+      interceptor: { mount: true },
     }),
   ],
   providers: [MurLockService],

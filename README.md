@@ -55,7 +55,7 @@ export class AppService {
 }
 ```
 
-By default, if there is single wrapped parameter, the property of parameter can be called directly as it shown
+By default, if there is single wrapped parameter, the property of parameter can be called directly as it shown.
 
 ```typescript
 import { MurLock } from 'murlock';

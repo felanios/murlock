@@ -31,7 +31,7 @@ import { MurLockModule } from 'murlock';
 @Module({
   imports: [
     MurLockModule.forRoot({
-      redisOptions: { host: 'localhost', port: 6379 },
+      redisOptions: { url: 'redis://localhost:6379' },
       wait: 1000,
       maxAttempts: 3,
       logLevel: 'log',
@@ -55,7 +55,7 @@ export class AppService {
 }
 ```
 
-By default, if there is single wrapped parameter, the property of parameter can be called directly as it shown
+By default, if there is single wrapped parameter, the property of parameter can be called directly as it shown.
 
 ```typescript
 import { MurLock } from 'murlock';

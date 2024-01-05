@@ -1,4 +1,4 @@
-import { MURLOCK_SERVICE_METADATA_KEY } from '../constants';
+import { Inject } from '@nestjs/common';
 import { MurLockException } from '../exceptions';
 import { MurLockService } from '../murlock.service';
 
@@ -23,11 +23,15 @@ function getParameterNames(func: Function): string[] {
  * @returns {PropertyDescriptor} a descriptor for the MurLock
  */
 export function MurLock(releaseTime: number, ...keyParams: string[]) {
+  const injectMurlockService = Inject(MurLockService);
+
   return (
     target: any,
     propertyKey: string,
     descriptor: PropertyDescriptor,
   ) => {
+    injectMurlockService(target, 'service');
+
     const originalMethod = descriptor.value;
     const methodParameterNames = getParameterNames(originalMethod);
 
@@ -57,7 +61,7 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
     descriptor.value = async function (...args: any[]) {
       const lockKey = constructLockKey(args);
 
-      const murLockService: MurLockService = Reflect.getMetadata(MURLOCK_SERVICE_METADATA_KEY, MurLockService);
+      const murLockService: MurLockService = this.service;
       if (!murLockService) {
         throw new MurLockException('MurLockService is not available.');
       }
@@ -69,7 +73,7 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
         await releaseLock(lockKey, murLockService);
       }
     };
-      
+
     return descriptor;
   };
 }
@@ -81,7 +85,7 @@ async function acquireLock(lockKey: string, murLockService: MurLockService, rele
   } catch (error) {
     throw new MurLockException(`Failed to acquire lock for key ${lockKey}: ${error.message}`);
   }
-      
+
   if (!isLockSuccessful) {
     throw new MurLockException(`Could not obtain lock for key ${lockKey}`);
   }
@@ -112,7 +116,7 @@ function findParameterValue({ args, source, parameterIndex, path }){
       return args[source][path]
   }
   if(args.length == 1 && isObject(args[0]) && !path){
-      return args[0][source] 
+      return args[0][source]
   }
   return args[parameterIndex];
 }

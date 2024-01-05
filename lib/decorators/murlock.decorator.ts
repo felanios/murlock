@@ -30,7 +30,7 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
     propertyKey: string,
     descriptor: PropertyDescriptor,
   ) => {
-    injectMurlockService(target, 'service');
+    injectMurlockService(target, 'murlockServiceDecorator');
 
     const originalMethod = descriptor.value;
     const methodParameterNames = getParameterNames(originalMethod);
@@ -61,7 +61,7 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
     descriptor.value = async function (...args: any[]) {
       const lockKey = constructLockKey(args);
 
-      const murLockService: MurLockService = this.service;
+      const murLockService: MurLockService = this.murlockServiceDecorator;
       if (!murLockService) {
         throw new MurLockException('MurLockService is not available.');
       }

@@ -2,14 +2,9 @@ import { Module, DynamicModule, Global, Provider } from '@nestjs/common';
 import { MurLockService } from './murlock.service';
 import 'reflect-metadata';
 import { MurLockModuleAsyncOptions, MurLockModuleOptions } from './interfaces';
-import { MURLOCK_SERVICE_METADATA_KEY } from './constants';
 
 @Global()
-@Module({
-  imports: [],
-  providers: [MurLockService],
-  exports: [MurLockService],
-})
+@Module({})
 export class MurLockModule {
   static forRoot(options: MurLockModuleOptions): DynamicModule {
     return {
@@ -20,14 +15,6 @@ export class MurLockModule {
           useValue: options,
         },
         MurLockService,
-        {
-          provide: MURLOCK_SERVICE_METADATA_KEY,
-          useFactory: (murLockService: MurLockService) => {
-            Reflect.defineMetadata(MURLOCK_SERVICE_METADATA_KEY, murLockService, MurLockService);
-            return murLockService;
-          },
-          inject: [MurLockService],
-        },
       ],
       exports: [MurLockService],
     };
@@ -40,14 +27,6 @@ export class MurLockModule {
       providers: [
         this.createAsyncOptionsProvider(options),
         MurLockService,
-        {
-          provide: MURLOCK_SERVICE_METADATA_KEY,
-          useFactory: (murLockService: MurLockService) => {
-            Reflect.defineMetadata(MURLOCK_SERVICE_METADATA_KEY, murLockService, MurLockService);
-            return murLockService;
-          },
-          inject: [MurLockService],
-        },
       ],
       exports: [MurLockService],
     };

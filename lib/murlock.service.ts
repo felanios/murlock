@@ -31,9 +31,11 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     await this.redisClient.connect();
   }
 
-  onApplicationShutdown(signal?: string) {
-    this.log('log', 'MurLock Redis Disconnected.');
-    this.redisClient.quit();
+  async onApplicationShutdown(signal?: string) {
+    this.log('log', 'Shutting down MurLock Redis client.');
+    if (this.redisClient && this.redisClient.isOpen) {
+      await this.redisClient.quit();
+    }
   }
 
   private generateUuid(): string {

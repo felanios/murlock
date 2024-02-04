@@ -2,19 +2,9 @@ import { Module, DynamicModule, Global, Provider } from '@nestjs/common';
 import { MurLockService } from './murlock.service';
 import 'reflect-metadata';
 import { MurLockModuleAsyncOptions, MurLockModuleOptions } from './interfaces';
-import { ClsModule } from 'nestjs-cls';
 
 @Global()
-@Module({
-  imports: [
-    ClsModule.forRoot({
-      global: true,
-      interceptor: { mount: true },
-    }),
-  ],
-  providers: [MurLockService],
-  exports: [MurLockService],
-})
+@Module({})
 export class MurLockModule {
   static forRoot(options: MurLockModuleOptions): DynamicModule {
     return {

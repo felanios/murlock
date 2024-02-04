@@ -3,7 +3,6 @@ import { createClient, RedisClientType } from 'redis';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { MurLockModuleOptions } from './interfaces';
-import { ClsService } from 'nestjs-cls';
 import { MurLockRedisException, MurLockException } from './exceptions';
 
 /**
@@ -15,10 +14,10 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   private redisClient: RedisClientType;
   private readonly lockScript = readFileSync(join(__dirname, './lua/lock.lua')).toString();
   private readonly unlockScript = readFileSync(join(__dirname, './lua/unlock.lua')).toString();
+  private clientId: string | undefined;
 
   constructor(
     @Inject('MURLOCK_OPTIONS') protected readonly options: MurLockModuleOptions,
-    private readonly clsService: ClsService,
   ) { }
 
   async onModuleInit() {
@@ -32,9 +31,11 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     await this.redisClient.connect();
   }
 
-  onApplicationShutdown(signal?: string) {
-    this.log('log', 'MurLock Redis Disconnected.');
-    this.redisClient.quit();
+  async onApplicationShutdown(signal?: string) {
+    this.log('log', 'Shutting down MurLock Redis client.');
+    if (this.redisClient && this.redisClient.isOpen) {
+      await this.redisClient.quit();
+    }
   }
 
   private generateUuid(): string {
@@ -50,12 +51,11 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   }
 
   private getClientId(): string {
-    let clientId = this.clsService.get('clientId');
-    if (!clientId) {
-      clientId = this.generateUuid();
-      this.clsService.set('clientId', clientId);
+    if (this.clientId) {
+      return this.clientId;
     }
-    return clientId;
+
+    return this.clientId = this.generateUuid();
   }
 
   private sleep(ms: number): Promise<void> {

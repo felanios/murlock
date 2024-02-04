@@ -1,6 +1,6 @@
 {
   "name": "murlock",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "A distributed locking solution for NestJS, providing a decorator for critical sections with Redis-based synchronization.",
   "author": "https://github.com/felanios",
   "homepage": "https://github.com/felanios/murlock#readme",
@@ -16,7 +16,6 @@
   "dependencies": {
     "@nestjs/common": "^10.0.5",
     "@nestjs/core": "^10.0.5",
-    "nestjs-cls": "^3.5.0",
     "redis": "^4.6.10",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1"

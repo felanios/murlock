@@ -35,6 +35,7 @@ import { MurLockModule } from 'murlock';
       wait: 1000,
       maxAttempts: 3,
       logLevel: 'log',
+      ignoreUnlockFail: false,
     }),
   ],
 })
@@ -102,7 +103,8 @@ import { MurLockModule } from 'murlock';
         redisOptions: configService.get('REDIS_OPTIONS'),
         wait: configService.get('MURLOCK_WAIT'),
         maxAttempts: configService.get('MURLOCK_MAX_ATTEMPTS'),
-        logLevel: configService.get('LOG_LEVEL')
+        logLevel: configService.get('LOG_LEVEL'),
+        ignoreUnlockFail: configService.get('LOG_LEVEL')
       }),
       inject: [ConfigService],
     }),
@@ -114,6 +116,22 @@ export class AppModule {}
 In the example above, the `ConfigModule` and `ConfigService` are used to provide the configuration for MurLock asynchronously.
 
 For more details on usage and configuration, please refer to the API documentation below.
+
+### Ignoring Unlock Failures
+
+In some scenarios, throwing an exception when a lock cannot be released can be undesirable. For example, you might prefer to log the failure and continue without interrupting the flow of your application. To enable this behavior, set the `ignoreUnlockFail` option to `true` in your configuration:
+
+```typescript
+import { MurLockModule } from 'murlock';
+
+MurLockModule.forRoot({
+  redisOptions: { url: 'redis://localhost:6379' },
+  wait: 1000,
+  maxAttempts: 3,
+  logLevel: 'log',
+  ignoreUnlockFail: true, // Unlock failures will be logged instead of throwing exceptions.
+}),
+```
 
 ## Using `MurLockService` Directly
 
@@ -183,6 +201,7 @@ try {
 
 - Always release locks in a `finally` block to avoid deadlocks.
 - Use meaningful lock keys that are unique to the resources they represent.
+- Even with `ignoreUnlockFail` set to true, you should implement your error handling logic. This could include logging and retry mechanisms for critical operations.
 - Keep lock durations as short as possible to prevent system blockage.
 
 Directly using `MurLockService` gives you finer control over lock management but also increases the responsibility to ensure locks are correctly managed throughout your application's lifecycle.
@@ -206,6 +225,7 @@ A method decorator to indicate that a particular method should be locked.
 - **wait:** Time (in milliseconds) to wait before retrying if a lock isn't obtained.
 - **maxAttempts:** Maximum number of attempts to obtain a lock.
 - **logLevel:** Logging level. Can be one of 'none', 'error', 'warn', 'log', or 'debug'.
+- **ignoreUnlockFail (optional):** When set to `true`, the library will not throw an exception if it fails to release a lock. Defaults to `false` to maintain backward compatibility.
 
 ### MurLockService
 

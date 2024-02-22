@@ -5,6 +5,7 @@ export interface MurLockModuleOptions {
   wait: number;
   maxAttempts: number;
   logLevel: 'none' | 'error' | 'warn' | 'log' | 'debug';
+  ignoreUnlockFail?: boolean;
 }
 
 export interface MurLockModuleAsyncOptions {

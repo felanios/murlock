@@ -12,7 +12,8 @@
     "incremental": true
   },
   "include": [
-    "lib/**/*"
+    "*.ts",
+    "**/*.ts"
   ],
   "exclude": ["node_modules","dist"]
 }

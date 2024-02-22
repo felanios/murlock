@@ -123,7 +123,11 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
       clientId,
     ]);
     if (result === 0) {
-      throw new MurLockException(`Failed to release lock for key ${lockKey}`);
+      if (!this.options.ignoreUnlockFail) {
+        throw new MurLockException(`Failed to release lock for key ${lockKey}`);
+      } else {
+        this.log('warn', `Failed to release lock for key ${lockKey}, but throwing errors is disabled.`);
+      }
     }
   }
 }

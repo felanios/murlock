@@ -4,6 +4,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { MurLockModuleOptions } from './interfaces';
 import { MurLockRedisException, MurLockException } from './exceptions';
+import { AsyncStorageManager } from './als/als-manager';
 
 /**
  * A service for MurLock to manage locks
@@ -14,10 +15,10 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   private redisClient: RedisClientType;
   private readonly lockScript = readFileSync(join(__dirname, './lua/lock.lua')).toString();
   private readonly unlockScript = readFileSync(join(__dirname, './lua/unlock.lua')).toString();
-  private clientId: string | undefined;
 
   constructor(
     @Inject('MURLOCK_OPTIONS') protected readonly options: MurLockModuleOptions,
+    private readonly asyncStorageManager: AsyncStorageManager<string>,
   ) { }
 
   async onModuleInit() {
@@ -51,11 +52,14 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   }
 
   private getClientId(): string {
-    if (this.clientId) {
-      return this.clientId;
+    let clientId = this.asyncStorageManager.get('clientId');
+
+    if (!clientId) {
+      clientId = this.generateUuid();
+      this.asyncStorageManager.set('clientId', clientId);
     }
 
-    return this.clientId = this.generateUuid();
+    return clientId;
   }
 
   private sleep(ms: number): Promise<void> {

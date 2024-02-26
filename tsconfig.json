@@ -12,8 +12,10 @@
     "incremental": true
   },
   "include": [
-    "*.ts",
-    "**/*.ts"
-  ],
-  "exclude": ["node_modules","dist"]
+    "lib/**/*.ts"
+  ],  
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

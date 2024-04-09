@@ -1,9 +1,9 @@
-import { Module, DynamicModule, Global, Provider } from '@nestjs/common';
+import { Module, DynamicModule, Provider, Global } from '@nestjs/common';
 import { MurLockService } from './murlock.service';
 import { MurLockModuleAsyncOptions, MurLockModuleOptions } from './interfaces';
-import { AsyncStorageManager } from './als/als-manager';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AsyncStorageInterceptor } from './interceptors';
+import { AsyncStorageManagerModule } from './als/als.module';
 
 @Global()
 @Module({})
@@ -11,12 +11,12 @@ export class MurLockModule {
   static forRoot(options: MurLockModuleOptions): DynamicModule {
     return {
       module: MurLockModule,
+      imports: [AsyncStorageManagerModule.forRoot()],
       providers: [
         {
           provide: 'MURLOCK_OPTIONS',
           useValue: options,
         },
-        AsyncStorageManager,
         MurLockService,
         {
           provide: APP_INTERCEPTOR,
@@ -30,11 +30,13 @@ export class MurLockModule {
   static forRootAsync(options: MurLockModuleAsyncOptions): DynamicModule {
     return {
       module: MurLockModule,
-      imports: options.imports || [],
+      imports: [
+        AsyncStorageManagerModule.forRoot(),
+        ...options.imports
+      ] || [AsyncStorageManagerModule.forRoot()],
       providers: [
         this.createAsyncOptionsProvider(options),
         MurLockService,
-        AsyncStorageManager,
         {
           provide: APP_INTERCEPTOR,
           useClass: AsyncStorageInterceptor,

@@ -39,27 +39,8 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  private generateUuid(): string {
-    let d = Date.now();
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
-      /[xy]/g,
-      (c: string) => {
-        const r = (d + Math.random() * 16) % 16 | 0;
-        d = Math.floor(d / 16);
-        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-      }
-    );
-  }
-
   private getClientId(): string {
-    let clientId = this.asyncStorageManager.get('clientId');
-
-    if (!clientId) {
-      clientId = this.generateUuid();
-      this.asyncStorageManager.set('clientId', clientId);
-    }
-
-    return clientId;
+    return this.asyncStorageManager.get('clientId');
   }
 
   private sleep(ms: number): Promise<void> {

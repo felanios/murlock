@@ -1,6 +1,6 @@
 # NestJS MurLock
 
-MurLock is a distributed lock solution designed for the NestJS framework. It provides a decorator `@MurLock()` that allows for critical sections of your application to be locked to prevent race conditions. MurLock uses Redis to ensure locks are respected across multiple instances of your application, making it perfect for microservices.
+MurLock is a distributed lock solution designed exclusively for the NestJS framework and works only with HTTP-based clients. It provides a decorator `@MurLock()` that allows for critical sections of your application to be locked to prevent race conditions. MurLock uses Redis to ensure locks are respected across multiple instances of your application, making it perfect for microservices.
 
 ## Features
 
@@ -239,6 +239,7 @@ A NestJS injectable service to interact with the locking mechanism directly.
 
 ## Limitations
 
+- **HTTP Clients Only:** MurLock is designed specifically for use with HTTP-based clients in the NestJS framework. It does not support non-HTTP clients directly.
 - **Redis Persistence:** Ensure that your Redis instance has RDB persistence enabled. This ensures that in case of a crash, locks are not lost.
 - **Single Redis Instance:** MurLock is not designed to work with Redis cluster mode. It's essential to ensure that locks are always set to a single instance.
 

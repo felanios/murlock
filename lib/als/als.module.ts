@@ -1,13 +1,15 @@
-import { AsyncLocalStorage } from 'async_hooks'
-import { DynamicModule } from '@nestjs/common'
+import { DynamicModule, Global, Module } from '@nestjs/common'
 import { AsyncStorageManager } from './als-manager';
+import { AsyncStorageService } from './als.service';
 
+@Global()
+@Module({})
 export class AsyncStorageManagerModule {
   static forRoot(): DynamicModule {
     return {
       module: AsyncStorageManagerModule,
-      providers: [{ provide: AsyncStorageManager, useValue: new AsyncStorageManager(new AsyncLocalStorage<any>()) }],
-      exports: [AsyncStorageManager]
+      providers: [AsyncStorageService, AsyncStorageManager],
+      exports: [AsyncStorageService]
     }
   }
 }

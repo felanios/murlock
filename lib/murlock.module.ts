@@ -1,8 +1,6 @@
 import { Module, DynamicModule, Provider, Global } from '@nestjs/common';
 import { MurLockService } from './murlock.service';
 import { MurLockModuleAsyncOptions, MurLockModuleOptions } from './interfaces';
-import { APP_INTERCEPTOR } from '@nestjs/core';
-import { AsyncStorageInterceptor } from './interceptors';
 import { AsyncStorageManagerModule } from './als/als.module';
 
 @Global()
@@ -18,10 +16,6 @@ export class MurLockModule {
           useValue: options,
         },
         MurLockService,
-        {
-          provide: APP_INTERCEPTOR,
-          useClass: AsyncStorageInterceptor,
-        },
       ],
       exports: [MurLockService],
     };
@@ -37,10 +31,6 @@ export class MurLockModule {
       providers: [
         this.createAsyncOptionsProvider(options),
         MurLockService,
-        {
-          provide: APP_INTERCEPTOR,
-          useClass: AsyncStorageInterceptor,
-        },
       ],
       exports: [MurLockService],
     };

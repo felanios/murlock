@@ -4,7 +4,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { MurLockModuleOptions } from './interfaces';
 import { MurLockRedisException, MurLockException } from './exceptions';
-import { AsyncStorageManager } from './als/als-manager';
+import { AsyncStorageService } from './als/als.service';
 
 /**
  * A service for MurLock to manage locks
@@ -18,7 +18,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
 
   constructor(
     @Inject('MURLOCK_OPTIONS') protected readonly options: MurLockModuleOptions,
-    private readonly asyncStorageManager: AsyncStorageManager<string>,
+    private readonly asyncStorageService: AsyncStorageService,
   ) { }
 
   async onModuleInit() {
@@ -40,7 +40,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   }
 
   private getClientId(): string {
-    return this.asyncStorageManager.get('clientId');
+    return this.asyncStorageService.get('clientId');
   }
 
   private sleep(ms: number): Promise<void> {

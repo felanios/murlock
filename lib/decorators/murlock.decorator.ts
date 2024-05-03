@@ -1,6 +1,8 @@
 import { Inject } from '@nestjs/common';
 import { MurLockException } from '../exceptions';
 import { MurLockService } from '../murlock.service';
+import { generateUuid } from '../utils';
+import { AsyncStorageService } from '../als/als.service';
 
 /**
  * Get all parameter names of a function
@@ -24,6 +26,7 @@ function getParameterNames(func: Function): string[] {
  */
 export function MurLock(releaseTime: number, ...keyParams: string[]) {
   const injectMurlockService = Inject(MurLockService);
+  const injectAsyncStorageService = Inject(AsyncStorageService);
 
   return (
     target: any,
@@ -31,6 +34,7 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
     descriptor: PropertyDescriptor,
   ) => {
     injectMurlockService(target, 'murlockServiceDecorator');
+    injectAsyncStorageService(target, 'asyncStorageService');
 
     const originalMethod = descriptor.value;
     const methodParameterNames = getParameterNames(originalMethod);
@@ -59,19 +63,28 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
     }
 
     descriptor.value = async function (...args: any[]) {
+
       const lockKey = constructLockKey(args);
 
       const murLockService: MurLockService = this.murlockServiceDecorator;
+      const asyncStorageService: AsyncStorageService = this.asyncStorageService;
+
       if (!murLockService) {
         throw new MurLockException('MurLockService is not available.');
       }
+      return asyncStorageService.runWithNewContext(async () => {
 
-      await acquireLock(lockKey, murLockService, releaseTime);
-      try {
-        return await originalMethod.apply(this, args);
-      } finally {
-        await releaseLock(lockKey, murLockService);
-      }
+        asyncStorageService.registerContext();
+
+        asyncStorageService.setClientID('clientId', generateUuid());
+
+        await acquireLock(lockKey, murLockService, releaseTime);
+        try {
+          return await originalMethod.apply(this, args);
+        } finally {
+          await releaseLock(lockKey, murLockService);
+        }
+      });
     };
 
     return descriptor;
@@ -102,7 +115,7 @@ async function releaseLock(lockKey: string, murLockService: MurLockService): Pro
 function isNumber(value) {
   const parsedValue = parseFloat(value);
   if (!isNaN(parsedValue)) {
-      return true;
+    return true;
   }
   return false;
 }
@@ -111,12 +124,12 @@ function isObject(value: any): boolean {
   return value !== null && value instanceof Object && !Array.isArray(value);
 }
 
-function findParameterValue({ args, source, parameterIndex, path }){
-  if(isNumber(source) && path){
-      return args[source][path]
+function findParameterValue({ args, source, parameterIndex, path }) {
+  if (isNumber(source) && path) {
+    return args[source][path]
   }
-  if(args.length == 1 && isObject(args[0]) && !path){
-      return args[0][source]
+  if (args.length == 1 && isObject(args[0]) && !path) {
+    return args[0][source]
   }
   return args[parameterIndex];
 }

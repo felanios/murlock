@@ -4,7 +4,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { MurLockModuleOptions } from './interfaces';
 import { MurLockRedisException, MurLockException } from './exceptions';
-import { AsyncStorageManager } from './als/als-manager';
+import { AsyncStorageService } from './als/als.service';
 
 /**
  * A service for MurLock to manage locks
@@ -18,7 +18,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
 
   constructor(
     @Inject('MURLOCK_OPTIONS') protected readonly options: MurLockModuleOptions,
-    private readonly asyncStorageManager: AsyncStorageManager<string>,
+    private readonly asyncStorageService: AsyncStorageService,
   ) { }
 
   async onModuleInit() {
@@ -39,27 +39,8 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  private generateUuid(): string {
-    let d = Date.now();
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
-      /[xy]/g,
-      (c: string) => {
-        const r = (d + Math.random() * 16) % 16 | 0;
-        d = Math.floor(d / 16);
-        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-      }
-    );
-  }
-
   private getClientId(): string {
-    let clientId = this.asyncStorageManager.get('clientId');
-
-    if (!clientId) {
-      clientId = this.generateUuid();
-      this.asyncStorageManager.set('clientId', clientId);
-    }
-
-    return clientId;
+    return this.asyncStorageService.get('clientId');
   }
 
   private sleep(ms: number): Promise<void> {

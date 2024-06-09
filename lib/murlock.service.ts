@@ -5,6 +5,7 @@ import { join } from 'path';
 import { MurLockModuleOptions } from './interfaces';
 import { MurLockRedisException, MurLockException } from './exceptions';
 import { AsyncStorageService } from './als/als.service';
+import { generateUuid } from './utils';
 
 /**
  * A service for MurLock to manage locks
@@ -39,10 +40,6 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  private getClientId(): string {
-    return this.asyncStorageService.get('clientId');
-  }
-
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -60,8 +57,11 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
  * @param {number} releaseTime the time in milliseconds when the lock should be released
  * @returns {Promise<boolean>} a promise that resolves to true if the lock is successful, false otherwise
  */
-  async lock(lockKey: string, releaseTime: number, attemptsRemaining = this.options.maxAttempts): Promise<boolean> {
-    const clientId = this.getClientId();
+  private async lock(
+    lockKey: string,
+    releaseTime: number,
+    clientId: string,
+  ): Promise<boolean> {
     this.log('debug', `MurLock Client ID is ${clientId}`);
 
     const attemptLock = async (attemptsRemaining: number): Promise<boolean> => {
@@ -98,8 +98,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
  * @param {string} lockKey the key to release the lock from
  * @returns {Promise<void>} a promise that resolves when the lock is released
  */
-  async unlock(lockKey: string): Promise<void> {
-    const clientId = this.getClientId();
+  private async unlock(lockKey: string, clientId: string): Promise<void> {
     const result = await this.redisClient.sendCommand([
       'EVAL',
       this.unlockScript,
@@ -113,6 +112,43 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
       } else {
         this.log('warn', `Failed to release lock for key ${lockKey}, but throwing errors is disabled.`);
       }
+    }
+  }
+
+  private async acquireLock(lockKey: string, clientId: string, releaseTime: number): Promise<void> {
+    let isLockSuccessful = false;
+    try {
+      isLockSuccessful = await this.lock(lockKey, releaseTime, clientId);
+    } catch (error) {
+      throw new MurLockException(`Failed to acquire lock for key ${lockKey}: ${error.message}`);
+    }
+
+    if (!isLockSuccessful) {
+      throw new MurLockException(`Could not obtain lock for key ${lockKey}`);
+    }
+  }
+
+  private async releaseLock(lockKey: string, clientId: string): Promise<void> {
+    try {
+      await this.unlock(lockKey, clientId);
+    } catch (error) {
+      throw new MurLockException(`Failed to release lock for key ${lockKey}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Executes a function within the scope of a managed lock.
+   */
+  async runWithLock<R>(lockKey: string, releaseTime: number, fn: () => Promise<R>): Promise<R> {
+    this.asyncStorageService.registerContext();
+    this.asyncStorageService.setClientID('clientId', generateUuid());
+    const clientId = this.asyncStorageService.get('clientId');
+
+    await this.acquireLock(lockKey, clientId, releaseTime);
+    try {
+      return await fn();
+    } finally {
+      await this.releaseLock(lockKey, clientId);
     }
   }
 }

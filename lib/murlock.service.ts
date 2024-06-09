@@ -17,7 +17,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   private readonly unlockScript = readFileSync(join(__dirname, './lua/unlock.lua')).toString();
 
   constructor(
-    @Inject('MURLOCK_OPTIONS') protected readonly options: MurLockModuleOptions,
+    @Inject('MURLOCK_OPTIONS') readonly options: MurLockModuleOptions,
     private readonly asyncStorageService: AsyncStorageService,
   ) { }
 

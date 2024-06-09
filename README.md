@@ -117,7 +117,6 @@ In the example above, the `ConfigModule` and `ConfigService` are used to provide
 
 For more details on usage and configuration, please refer to the API documentation below.
 
-
 ## Using Custom Lock Key
 
 By default, murlock use class and method name prefix for example Userservice:createUser:{userId}. By setting lockKeyPrefix as 'custom' you can define by yourself manually.
@@ -142,6 +141,7 @@ import { MurLockModule } from 'murlock';
 })
 export class AppModule {}
 ```
+
 ```typescript
 import { MurLock } from 'murlock';
 
@@ -175,9 +175,9 @@ If we assume userId as 65782628 Lockey here will be someCustomKey:65782628
 
 ## Using `MurLockService` Directly
 
-While the `@MurLock()` decorator provides a convenient and declarative way to handle locking within your NestJS application, there may be cases where you need more control over the lock lifecycle. For such cases, `MurLockService` offers a programmatic way to manage locks.
+While the `@MurLock()` decorator provides a convenient and declarative way to handle locking within your NestJS application, there may be cases where you need more control over the lock lifecycle. For such cases, `MurLockService` offers a programmatic way to manage locks, allowing for fine-grained control over the lock and unlock process through the `runWithLock` method.
 
-#### Injecting `MurLockService`
+### Injecting `MurLockService`
 
 First, inject `MurLockService` into your service:
 
@@ -195,60 +195,57 @@ export class YourService {
 
 #### Acquiring a Lock
 
-You can acquire a lock by calling the `acquireLock` method with a unique `lockKey` and the desired `lockTime`:
+You no longer need to manually manage `lock` and `unlock`. Instead, use the `runWithLock` method, which handles both acquiring and releasing the lock:
 
 ```typescript
 async performTaskWithLock() {
   const lockKey = 'unique_lock_key';
-  const lockTime = 3000; // Duration for which the lock should be held in milliseconds
+  const lockTime = 3000; // Duration for which the lock should be held, in milliseconds
 
   try {
-    await this.murLockService.acquireLock(lockKey, lockTime);
-    // Proceed with the operation that requires the lock
+    await this.murLockService.runWithLock(lockKey, lockTime, async () => {
+      // Proceed with the operation that requires the lock
+    });
   } catch (error) {
-    // Handle the error if the lock could not be acquired
+    // Handle the error if the lock could not be acquired or any other exceptions
     throw error;
-  } finally {
-    // Make sure to release the lock
-    await this.murLockService.releaseLock(lockKey);
   }
 }
 ```
 
-#### Releasing a Lock
+### Handling Errors
 
-To release a lock, use the `releaseLock` method:
-
-```typescript
-await this.murLockService.releaseLock(lockKey);
-```
-
-#### Handling Errors
-
-Make sure to handle exceptions gracefully, especially when you are unable to acquire a lock:
+The `runWithLock` method throws an exception if the lock cannot be acquired within the specified time or if an error occurs during the execution of the function:
 
 ```typescript
 try {
-  // Lock acquisition attempts
+  await this.murLockService.runWithLock(lockKey, lockTime, async () => {
+    // Locked operations
+  });
 } catch (error) {
   // Error handling logic
-} finally {
-  // Always release the lock in a finally block
 }
 ```
-
-#### Best Practices and Considerations
-
-- Always release locks in a `finally` block to avoid deadlocks.
-- Use meaningful lock keys that are unique to the resources they represent.
-- Even with `ignoreUnlockFail` set to true, you should implement your error handling logic. This could include logging and retry mechanisms for critical operations.
-- Keep lock durations as short as possible to prevent system blockage.
 
 Directly using `MurLockService` gives you finer control over lock management but also increases the responsibility to ensure locks are correctly managed throughout your application's lifecycle.
 
 ---
 
 This refined section is suitable for developers looking for documentation on using `MurLockService` directly in their projects and adheres to the typical conventions found in README files for open-source projects.
+
+## Best Practices and Considerations
+
+- **Short-lived Locks**: Ensure that locks are short-lived to prevent deadlocks and to increase the efficiency of your application.
+**Error Handling**: Robustly handle errors during lock acquisition:
+  - **Graceful Failures**: If a lock cannot be obtained, handle the situation gracefully, potentially logging the incident and retrying the operation.
+  - **Consider Failures in Unlocking**: Even with `ignoreUnlockFail` set to true, implement error handling strategies to log and manage unlock failures, ensuring they do not disrupt the application flow.
+- **Logging**: Adjust the `logLevel` based on your environment. Use 'debug' for development and 'error' or 'warn' for production.
+- **Consistency**: Use consistent lock keys that clearly represent the resources or operations they are meant to protect.
+- **Customizable Lock Keys**: Utilize the `lockKeyPrefix` to tailor how lock keys are constructed:
+  - **Default**: Automatically includes the class and method name, e.g., `Userservice:createUser:{userId}`.
+  - **Custom**: Set `lockKeyPrefix` to 'custom' and define lock keys explicitly to fine-tune lock scope and granularity.
+- **Resource Cleanup**: Even though `runWithLock` manages lock cleanup, ensure your application logic correctly handles any necessary cleanup or rollback in case of errors.
+- **Use of Finally Block**: Explicitly manage lock release in a `finally` block to ensure that locks are always released, preventing potential deadlocks and resource leaks.
 
 ## API Documentation
 
@@ -261,21 +258,20 @@ A method decorator to indicate that a particular method should be locked.
 
 ### Configuration Options
 
-- **redisOptions:** Configuration options for the Redis client.
-- **wait:** Time (in milliseconds) to wait before retrying if a lock isn't obtained.
-- **maxAttempts:** Maximum number of attempts to obtain a lock.
-- **logLevel:** Logging level. Can be one of 'none', 'error', 'warn', 'log', or 'debug'.
-- **ignoreUnlockFail (optional):** When set to `true`, the library will not throw an exception if it fails to release a lock. Defaults to `false` to maintain backward compatibility.
+Here are the customizable options for `MurLockModule`, allowing you to tailor its behavior to best fit your application's needs:
+
+- **redisOptions:** Configuration settings for the Redis client, such as the connection URL.
+- **wait:** Time in milliseconds to wait before retrying to obtain a lock if the initial attempt fails.
+- **maxAttempts:** The maximum number of attempts to try and acquire a lock before giving up.
+- **logLevel:** Determines the level of logging used within the module. Options include 'none', 'error', 'warn', 'log', or 'debug'.
+- **ignoreUnlockFail (optional):** When set to `true`, the module will not throw an exception if releasing a lock fails. This setting helps in scenarios where failing silently is preferred over interrupting the application flow. Defaults to `false` to ensure that failures are noticed and handled appropriately.
+- **lockKeyPrefix (optional)**: Specifies how lock keys are prefixed, allowing for greater flexibility:
+  - **Default**: Uses class and method names as prefixes, e.g., `Userservice:createUser:{userId}`.
+  - **Custom**: Set this to 'custom' to define lock keys manually in your service methods, allowing for specific lock key constructions beyond the standard naming.
 
 ### MurLockService
 
 A NestJS injectable service to interact with the locking mechanism directly.
-
-## Best Practices
-
-- **Short-lived Locks:** Ensure that locks are short-lived to prevent deadlocks and increase the efficiency of your application.
-- **Error Handling:** Always handle errors gracefully. If a lock isn't obtained, it's often better to return a failure or retry after some time.
-- **Logging:** Adjust the `logLevel` based on your environment. Use 'debug' for development and 'error' or 'warn' for production.
 
 ## Limitations
 

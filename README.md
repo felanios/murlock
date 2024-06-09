@@ -130,6 +130,7 @@ MurLockModule.forRoot({
   maxAttempts: 3,
   logLevel: 'log',
   ignoreUnlockFail: true, // Unlock failures will be logged instead of throwing exceptions.
+  lockKeyPrefix: 'default' // optional, use 'default' if you would like to lock keys as servicename:methodname:customdata, otherwise use 'custom' to manually write each lock key
 }),
 ```
 

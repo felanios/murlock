@@ -6,6 +6,7 @@ export interface MurLockModuleOptions {
   maxAttempts: number;
   logLevel: 'none' | 'error' | 'warn' | 'log' | 'debug';
   ignoreUnlockFail?: boolean;
+  lockKeyPrefix: 'default' | 'custom'
 }
 
 export interface MurLockModuleAsyncOptions {

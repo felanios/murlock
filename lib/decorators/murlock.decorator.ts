@@ -3,6 +3,7 @@ import { MurLockException } from '../exceptions';
 import { MurLockService } from '../murlock.service';
 import { generateUuid } from '../utils';
 import { AsyncStorageService } from '../als/als.service';
+import { MurLockModuleOptions } from '../interfaces';
 
 /**
  * Get all parameter names of a function
@@ -27,6 +28,7 @@ function getParameterNames(func: Function): string[] {
 export function MurLock(releaseTime: number, ...keyParams: string[]) {
   const injectMurlockService = Inject(MurLockService);
   const injectAsyncStorageService = Inject(AsyncStorageService);
+  const injectMurlockModuleOptions = Inject('MURLOCK_OPTIONS');
 
   return (
     target: any,
@@ -35,15 +37,23 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
   ) => {
     injectMurlockService(target, 'murlockServiceDecorator');
     injectAsyncStorageService(target, 'asyncStorageService');
+    injectMurlockModuleOptions(target, 'MURLOCK_OPTIONS')
 
     const originalMethod = descriptor.value;
     const methodParameterNames = getParameterNames(originalMethod);
 
     function constructLockKey(args: any[]): string {
-      const lockKeyElements = [
-        target.constructor.name,
-        propertyKey,
-        ...keyParams.map((keyParam) => {
+
+
+      const murlockModuleOptions: MurLockModuleOptions = this.MURLOCK_OPTIONS;
+      let lockKeyElements = [];
+      if(murlockModuleOptions.lockKeyPrefix != 'custom')
+        {
+          lockKeyElements.push(target.constructor.name);
+          lockKeyElements.push(propertyKey);
+        }
+      
+        lockKeyElements.push(...keyParams.map((keyParam) => {
           const [source, path] = keyParam.split('.');
           const parameterIndex = isNumber(source) ? Number(source) : methodParameterNames.indexOf(source);
           if (parameterIndex >= 0) {
@@ -58,7 +68,7 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
           }
           throw new MurLockException(`Parameter ${source} not found in method arguments.`);
         }),
-      ];
+      );
       return lockKeyElements.join(':');
     }
 

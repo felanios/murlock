@@ -3,7 +3,6 @@ import { MurLockException } from '../exceptions';
 import { MurLockService } from '../murlock.service';
 import { generateUuid } from '../utils';
 import { AsyncStorageService } from '../als/als.service';
-import { MurLockModuleOptions } from '../interfaces';
 
 /**
  * Get all parameter names of a function
@@ -28,7 +27,6 @@ function getParameterNames(func: Function): string[] {
 export function MurLock(releaseTime: number, ...keyParams: string[]) {
   const injectMurlockService = Inject(MurLockService);
   const injectAsyncStorageService = Inject(AsyncStorageService);
-  const injectMurlockModuleOptions = Inject('MURLOCK_OPTIONS');
 
   return (
     target: any,
@@ -37,17 +35,14 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
   ) => {
     injectMurlockService(target, 'murlockServiceDecorator');
     injectAsyncStorageService(target, 'asyncStorageService');
-    injectMurlockModuleOptions(target, 'MURLOCK_OPTIONS')
 
     const originalMethod = descriptor.value;
     const methodParameterNames = getParameterNames(originalMethod);
 
-    function constructLockKey(args: any[]): string {
+    function constructLockKey(args: any[], lockKeyPrefix = 'default'): string {
 
-
-      const murlockModuleOptions: MurLockModuleOptions = this.MURLOCK_OPTIONS;
       let lockKeyElements = [];
-      if(murlockModuleOptions.lockKeyPrefix != 'custom')
+      if(lockKeyPrefix != 'custom')
         {
           lockKeyElements.push(target.constructor.name);
           lockKeyElements.push(propertyKey);
@@ -66,6 +61,11 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
             }
             return parameterValue instanceof Object ? parameterValue.toString() : parameterValue;
           }
+          
+          if(lockKeyPrefix == 'custom'){
+            return source;
+        }
+
           throw new MurLockException(`Parameter ${source} not found in method arguments.`);
         }),
       );
@@ -74,10 +74,10 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
 
     descriptor.value = async function (...args: any[]) {
 
-      const lockKey = constructLockKey(args);
-
       const murLockService: MurLockService = this.murlockServiceDecorator;
       const asyncStorageService: AsyncStorageService = this.asyncStorageService;
+
+      const lockKey = constructLockKey(args, murLockService.options.lockKeyPrefix);
 
       if (!murLockService) {
         throw new MurLockException('MurLockService is not available.');

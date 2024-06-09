@@ -117,6 +117,32 @@ In the example above, the `ConfigModule` and `ConfigService` are used to provide
 
 For more details on usage and configuration, please refer to the API documentation below.
 
+
+## Using Custom Lock Key
+
+By default, murlock use class and method name prefix for example Userservice:createUser:{userId}. By setting lockKeyPrefix as 'custom' you can define by yourself manually.
+
+```typescript
+import { MurLockModule } from 'murlock';
+
+@Module({
+  imports: [
+    MurLockModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        redisOptions: configService.get('REDIS_OPTIONS'),
+        wait: configService.get('MURLOCK_WAIT'),
+        maxAttempts: configService.get('MURLOCK_MAX_ATTEMPTS'),
+        logLevel: configService.get('LOG_LEVEL'),
+        lockKeyPrefix: 'custom'
+      }),
+      inject: [ConfigService],
+    }),
+  ],
+})
+export class AppModule {}
+```
+
 ### Ignoring Unlock Failures
 
 In some scenarios, throwing an exception when a lock cannot be released can be undesirable. For example, you might prefer to log the failure and continue without interrupting the flow of your application. To enable this behavior, set the `ignoreUnlockFail` option to `true` in your configuration:
@@ -133,6 +159,20 @@ MurLockModule.forRoot({
   lockKeyPrefix: 'default' // optional, use 'default' if you would like to lock keys as servicename:methodname:customdata, otherwise use 'custom' to manually write each lock key
 }),
 ```
+
+```typescript
+import { MurLock } from 'murlock';
+
+@Injectable()
+export class AppService {
+  @MurLock(5000, 'someCustomKey', 'userId')
+  async someFunction(userId): Promise<void> {
+    // Some critical section that only one request should be able to execute at a time
+  }
+}
+```
+
+If we assume userId as 65782628 Lockey here will be someCustomKey:65782628
 
 ## Using `MurLockService` Directly
 

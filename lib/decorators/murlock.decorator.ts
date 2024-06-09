@@ -39,11 +39,16 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
     const originalMethod = descriptor.value;
     const methodParameterNames = getParameterNames(originalMethod);
 
-    function constructLockKey(args: any[]): string {
-      const lockKeyElements = [
-        target.constructor.name,
-        propertyKey,
-        ...keyParams.map((keyParam) => {
+    function constructLockKey(args: any[], lockKeyPrefix = 'default'): string {
+
+      let lockKeyElements = [];
+      if(lockKeyPrefix != 'custom')
+        {
+          lockKeyElements.push(target.constructor.name);
+          lockKeyElements.push(propertyKey);
+        }
+      
+        lockKeyElements.push(...keyParams.map((keyParam) => {
           const [source, path] = keyParam.split('.');
           const parameterIndex = isNumber(source) ? Number(source) : methodParameterNames.indexOf(source);
           if (parameterIndex >= 0) {
@@ -56,18 +61,23 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
             }
             return parameterValue instanceof Object ? parameterValue.toString() : parameterValue;
           }
+          
+          if(lockKeyPrefix == 'custom'){
+            return source;
+        }
+
           throw new MurLockException(`Parameter ${source} not found in method arguments.`);
         }),
-      ];
+      );
       return lockKeyElements.join(':');
     }
 
     descriptor.value = async function (...args: any[]) {
 
-      const lockKey = constructLockKey(args);
-
       const murLockService: MurLockService = this.murlockServiceDecorator;
       const asyncStorageService: AsyncStorageService = this.asyncStorageService;
+
+      const lockKey = constructLockKey(args, murLockService.options.lockKeyPrefix);
 
       if (!murLockService) {
         throw new MurLockException('MurLockService is not available.');

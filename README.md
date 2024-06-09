@@ -142,6 +142,17 @@ import { MurLockModule } from 'murlock';
 })
 export class AppModule {}
 ```
+```typescript
+import { MurLock } from 'murlock';
+
+@Injectable()
+export class AppService {
+  @MurLock(5000, 'someCustomKey', 'userId')
+  async someFunction(userId): Promise<void> {
+    // Some critical section that only one request should be able to execute at a time
+  }
+}
+```
 
 ### Ignoring Unlock Failures
 
@@ -158,18 +169,6 @@ MurLockModule.forRoot({
   ignoreUnlockFail: true, // Unlock failures will be logged instead of throwing exceptions.
   lockKeyPrefix: 'default' // optional, use 'default' if you would like to lock keys as servicename:methodname:customdata, otherwise use 'custom' to manually write each lock key
 }),
-```
-
-```typescript
-import { MurLock } from 'murlock';
-
-@Injectable()
-export class AppService {
-  @MurLock(5000, 'someCustomKey', 'userId')
-  async someFunction(userId): Promise<void> {
-    // Some critical section that only one request should be able to execute at a time
-  }
-}
 ```
 
 If we assume userId as 65782628 Lockey here will be someCustomKey:65782628

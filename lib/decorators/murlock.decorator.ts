@@ -1,8 +1,6 @@
 import { Inject } from '@nestjs/common';
 import { MurLockException } from '../exceptions';
 import { MurLockService } from '../murlock.service';
-import { generateUuid } from '../utils';
-import { AsyncStorageService } from '../als/als.service';
 
 /**
  * Get all parameter names of a function
@@ -26,7 +24,6 @@ function getParameterNames(func: Function): string[] {
  */
 export function MurLock(releaseTime: number, ...keyParams: string[]) {
   const injectMurlockService = Inject(MurLockService);
-  const injectAsyncStorageService = Inject(AsyncStorageService);
 
   return (
     target: any,
@@ -34,7 +31,6 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
     descriptor: PropertyDescriptor,
   ) => {
     injectMurlockService(target, 'murlockServiceDecorator');
-    injectAsyncStorageService(target, 'asyncStorageService');
 
     const originalMethod = descriptor.value;
     const methodParameterNames = getParameterNames(originalMethod);
@@ -42,32 +38,31 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
     function constructLockKey(args: any[], lockKeyPrefix = 'default'): string {
 
       let lockKeyElements = [];
-      if(lockKeyPrefix != 'custom')
-        {
-          lockKeyElements.push(target.constructor.name);
-          lockKeyElements.push(propertyKey);
-        }
-      
-        lockKeyElements.push(...keyParams.map((keyParam) => {
-          const [source, path] = keyParam.split('.');
-          const parameterIndex = isNumber(source) ? Number(source) : methodParameterNames.indexOf(source);
-          if (parameterIndex >= 0) {
-            const parameterValue = findParameterValue({ args, source, parameterIndex, path })
-            if (typeof parameterValue === 'undefined' || parameterValue === null) {
-              throw new MurLockException(`Parameter ${source} is undefined or null.`);
-            }
-            if (path && typeof parameterValue === 'object' && parameterValue !== null && path in parameterValue) {
-              return parameterValue[path];
-            }
-            return parameterValue instanceof Object ? parameterValue.toString() : parameterValue;
+      if (lockKeyPrefix != 'custom') {
+        lockKeyElements.push(target.constructor.name);
+        lockKeyElements.push(propertyKey);
+      }
+
+      lockKeyElements.push(...keyParams.map((keyParam) => {
+        const [source, path] = keyParam.split('.');
+        const parameterIndex = isNumber(source) ? Number(source) : methodParameterNames.indexOf(source);
+        if (parameterIndex >= 0) {
+          const parameterValue = findParameterValue({ args, source, parameterIndex, path })
+          if (typeof parameterValue === 'undefined' || parameterValue === null) {
+            throw new MurLockException(`Parameter ${source} is undefined or null.`);
           }
-          
-          if(lockKeyPrefix == 'custom'){
-            return source;
+          if (path && typeof parameterValue === 'object' && parameterValue !== null && path in parameterValue) {
+            return parameterValue[path];
+          }
+          return parameterValue instanceof Object ? parameterValue.toString() : parameterValue;
         }
 
-          throw new MurLockException(`Parameter ${source} not found in method arguments.`);
-        }),
+        if (lockKeyPrefix == 'custom') {
+          return source;
+        }
+
+        throw new MurLockException(`Parameter ${source} not found in method arguments.`);
+      }),
       );
       return lockKeyElements.join(':');
     }
@@ -75,51 +70,20 @@ export function MurLock(releaseTime: number, ...keyParams: string[]) {
     descriptor.value = async function (...args: any[]) {
 
       const murLockService: MurLockService = this.murlockServiceDecorator;
-      const asyncStorageService: AsyncStorageService = this.asyncStorageService;
 
       const lockKey = constructLockKey(args, murLockService.options.lockKeyPrefix);
 
       if (!murLockService) {
         throw new MurLockException('MurLockService is not available.');
       }
-      return asyncStorageService.runWithNewContext(async () => {
 
-        asyncStorageService.registerContext();
-
-        asyncStorageService.setClientID('clientId', generateUuid());
-
-        await acquireLock(lockKey, murLockService, releaseTime);
-        try {
-          return await originalMethod.apply(this, args);
-        } finally {
-          await releaseLock(lockKey, murLockService);
-        }
+      return murLockService.runWithLock(lockKey, releaseTime, async () => {
+        return originalMethod.apply(this, args);
       });
     };
 
     return descriptor;
   };
-}
-
-async function acquireLock(lockKey: string, murLockService: MurLockService, releaseTime: number): Promise<void> {
-  let isLockSuccessful = false;
-  try {
-    isLockSuccessful = await murLockService.lock(lockKey, releaseTime);
-  } catch (error) {
-    throw new MurLockException(`Failed to acquire lock for key ${lockKey}: ${error.message}`);
-  }
-
-  if (!isLockSuccessful) {
-    throw new MurLockException(`Could not obtain lock for key ${lockKey}`);
-  }
-}
-
-async function releaseLock(lockKey: string, murLockService: MurLockService): Promise<void> {
-  try {
-    await murLockService.unlock(lockKey);
-  } catch (error) {
-    throw new MurLockException(`Failed to release lock for key ${lockKey}: ${error.message}`);
-  }
 }
 
 function isNumber(value) {

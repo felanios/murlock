@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { AsyncStorageManagerException } from '../exceptions';
 
+@Injectable()
 export class AsyncStorageManager<T> implements Map<string, T> {
   constructor(private readonly asyncLocalStorage: AsyncLocalStorage<Map<string, T>>) { }
 

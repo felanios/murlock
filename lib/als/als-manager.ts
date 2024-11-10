@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'async_hooks';
+import { Injectable } from "@nestjs/common";
 import { AsyncStorageManagerException } from '../exceptions';
 
 @Injectable()

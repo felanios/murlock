@@ -4,9 +4,8 @@ import { AsyncLocalStorage } from "async_hooks";
 
 @Injectable()
 export class AsyncStorageService implements OnModuleInit {
-  constructor(private asyncStorageManager: AsyncStorageManager<string>) { }
-
-  onModuleInit() {
+  private asyncStorageManager: AsyncStorageManager<string>;
+  constructor() {
     this.asyncStorageManager = new AsyncStorageManager(new AsyncLocalStorage<any>());
   }
 

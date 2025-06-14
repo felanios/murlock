@@ -5,7 +5,7 @@ import {
   OnApplicationShutdown,
   OnModuleInit,
 } from '@nestjs/common';
-import { readFileSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { createClient, RedisClientType } from 'redis';
 import { AsyncStorageService } from './als/als.service';
@@ -20,12 +20,8 @@ import { generateUuid } from './utils';
 export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(MurLockService.name);
   private redisClient: RedisClientType;
-  private readonly lockScript = readFileSync(
-    join(__dirname, './lua/lock.lua')
-  ).toString();
-  private readonly unlockScript = readFileSync(
-    join(__dirname, './lua/unlock.lua')
-  ).toString();
+  private lockScript: string;
+  private unlockScript: string;
 
   constructor(
     @Inject('MURLOCK_OPTIONS') readonly options: MurLockModuleOptions,
@@ -33,6 +29,21 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   ) {}
 
   async onModuleInit() {
+    try {
+      this.lockScript = await readFile(
+        join(__dirname, './lua/lock.lua'),
+        'utf8'
+      );
+      this.unlockScript = await readFile(
+        join(__dirname, './lua/unlock.lua'),
+        'utf8'
+      );
+    } catch (error) {
+      throw new MurLockException(
+        `Failed to load Lua scripts: ${error.message}`
+      );
+    }
+
     this.redisClient = createClient({
       ...this.options.redisOptions,
       socket: {
@@ -47,7 +58,14 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     
     this.registerRedisErrorHandlers();
 
-    await this.redisClient.connect();
+    try {
+      await this.redisClient.connect();
+    } catch (error) {
+      this.log('error', `Failed to connect to Redis: ${error.message}`);
+      if (this.options.failFastOnRedisError) {
+        throw new MurLockException(`Redis connection failed: ${error.message}`);
+      }
+    }
   }
 
   async onApplicationShutdown(signal?: string) {

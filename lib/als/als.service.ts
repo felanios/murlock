@@ -1,16 +1,11 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
-import { AsyncStorageManager } from "./als-manager";
-import { AsyncLocalStorage } from "async_hooks";
+import { Injectable } from '@nestjs/common';
+import { AsyncStorageManager } from './als-manager';
 
 @Injectable()
-export class AsyncStorageService implements OnModuleInit {
-  constructor(private asyncStorageManager: AsyncStorageManager<string>) { }
+export class AsyncStorageService {
+  constructor(private readonly asyncStorageManager: AsyncStorageManager<string>) {}
 
-  onModuleInit() {
-    this.asyncStorageManager = new AsyncStorageManager(new AsyncLocalStorage<any>());
-  }
-
-  async runWithNewContext<R, TArgs extends any[]>(fn: (...args: TArgs) => R, ...args: TArgs): Promise<R> {
+  runWithNewContext<R, TArgs extends any[]>(fn: (...args: TArgs) => R, ...args: TArgs): R {
     return this.asyncStorageManager.runWithNewContext(fn, ...args);
   }
 

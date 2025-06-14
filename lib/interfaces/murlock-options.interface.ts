@@ -7,6 +7,8 @@ export interface MurLockModuleOptions {
   logLevel: 'none' | 'error' | 'warn' | 'log' | 'debug';
   ignoreUnlockFail?: boolean;
   lockKeyPrefix?: 'default' | 'custom'
+  failFastOnRedisError?: boolean;
+  blocking?: boolean;
 }
 
 export interface MurLockModuleAsyncOptions {

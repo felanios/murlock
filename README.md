@@ -8,8 +8,11 @@ MurLock is a distributed lock solution designed for the NestJS framework. It pro
 - **Parameter-Based Locking**: Creates locks based on request parameters or bodies.
 - **Highly Customizable**: Customize many parameters, such as lock duration.
 - **Retry Mechanism**: Implements an exponential back-off strategy if the lock is not obtained.
-- **Logging: Provides**: logging options for debugging and monitoring.
+- **Logging**: Provides logging options for debugging and monitoring.
 - **OOP and Generic Structure**: Easily integratable and expandable due to its OOP and generic design.
+- **Blocking Mode**: Optional infinite retry mode for critical operations.
+- **Robust Redis Connection**: Automatic reconnection with configurable strategy.
+- **Fail-Fast Option**: Configurable behavior on Redis connection failures.
 
 ## Installation
 
@@ -36,6 +39,8 @@ import { MurLockModule } from 'murlock';
       maxAttempts: 3,
       logLevel: 'log',
       ignoreUnlockFail: false,
+      failFastOnRedisError: false,
+      blocking: false,
     }),
   ],
 })
@@ -104,7 +109,9 @@ import { MurLockModule } from 'murlock';
         wait: configService.get('MURLOCK_WAIT'),
         maxAttempts: configService.get('MURLOCK_MAX_ATTEMPTS'),
         logLevel: configService.get('LOG_LEVEL'),
-        ignoreUnlockFail: configService.get('LOG_LEVEL')
+        ignoreUnlockFail: configService.get('IGNORE_UNLOCK_FAIL'),
+        failFastOnRedisError: configService.get('FAIL_FAST_ON_REDIS_ERROR'),
+        blocking: configService.get('BLOCKING_MODE'),
       }),
       inject: [ConfigService],
     }),
@@ -115,7 +122,89 @@ export class AppModule {}
 
 In the example above, the `ConfigModule` and `ConfigService` are used to provide the configuration for MurLock asynchronously.
 
-For more details on usage and configuration, please refer to the API documentation below.
+## Overriding Global Wait Per Decorator
+
+You can override the global wait parameter per decorator, allowing fine-grained retry control:
+
+### Example 1: Dynamic Wait Strategy
+
+```typescript
+@MurLock(
+  5000, 
+  (retries) => (Math.floor(Math.random() * 50) + 50) * retries,
+  'user.id',
+)
+async someFunction(user: User): Promise<void> {
+  // This uses a randomized backoff strategy for retrying lock acquisition.
+}
+```
+
+### Example 2: Fixed Wait Strategy Per Method
+
+```typescript
+@MurLock(5000, 1500, 'user.id')
+async anotherFunction(user: User): Promise<void> {
+  // This will retry every 1500ms instead of global wait.
+}
+```
+
+- If no wait is provided in decorator, MurLock will fallback to global wait from forRoot().
+- Allows dynamic retry logic per critical section.
+
+## Blocking Mode
+
+MurLock supports a blocking mode where it will continuously retry to acquire the lock until successful. This is useful for critical operations that must eventually succeed.
+
+```typescript
+@Module({
+  imports: [
+    MurLockModule.forRoot({
+      redisOptions: { url: 'redis://localhost:6379' },
+      wait: 1000,
+      maxAttempts: 3,
+      logLevel: 'log',
+      blocking: true, // Enable blocking mode
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+When blocking mode is enabled:
+
+- The `maxAttempts` parameter is ignored
+- The service will continuously retry to acquire the lock
+- Each retry will wait for the specified `wait` time
+- Redis errors will be logged but won't stop the retry process
+
+## Redis Connection Handling
+
+MurLock includes robust Redis connection handling:
+
+- **Automatic Reconnection**: Implements a reconnection strategy with exponential backoff
+- **Connection Events**: Logs connection status changes (ready, reconnecting, end)
+- **Fail-Fast Option**: Can be configured to exit the application on Redis connection failures
+
+```typescript
+@Module({
+  imports: [
+    MurLockModule.forRoot({
+      redisOptions: { 
+        url: 'redis://localhost:6379',
+        socket: {
+          keepAlive: false,
+          reconnectStrategy: (retries) => {
+            const delay = Math.min(retries * 500, 5000);
+            return delay;
+          },
+        },
+      },
+      failFastOnRedisError: true, // Exit application on Redis connection failure
+    }),
+  ],
+})
+export class AppModule {}
+```
 
 ## Using Custom Lock Key
 
@@ -229,14 +318,10 @@ try {
 
 Directly using `MurLockService` gives you finer control over lock management but also increases the responsibility to ensure locks are correctly managed throughout your application's lifecycle.
 
----
-
-This refined section is suitable for developers looking for documentation on using `MurLockService` directly in their projects and adheres to the typical conventions found in README files for open-source projects.
-
 ## Best Practices and Considerations
 
 - **Short-lived Locks**: Ensure that locks are short-lived to prevent deadlocks and to increase the efficiency of your application.
-**Error Handling**: Robustly handle errors during lock acquisition:
+- **Error Handling**: Robustly handle errors during lock acquisition:
   - **Graceful Failures**: If a lock cannot be obtained, handle the situation gracefully, potentially logging the incident and retrying the operation.
   - **Consider Failures in Unlocking**: Even with `ignoreUnlockFail` set to true, implement error handling strategies to log and manage unlock failures, ensuring they do not disrupt the application flow.
 - **Logging**: Adjust the `logLevel` based on your environment. Use 'debug' for development and 'error' or 'warn' for production.
@@ -246,28 +331,35 @@ This refined section is suitable for developers looking for documentation on usi
   - **Custom**: Set `lockKeyPrefix` to 'custom' and define lock keys explicitly to fine-tune lock scope and granularity.
 - **Resource Cleanup**: Even though `runWithLock` manages lock cleanup, ensure your application logic correctly handles any necessary cleanup or rollback in case of errors.
 - **Use of Finally Block**: Explicitly manage lock release in a `finally` block to ensure that locks are always released, preventing potential deadlocks and resource leaks.
+- **Redis Connection**: Configure Redis connection options appropriately for your environment:
+  - Use `failFastOnRedisError` in production to ensure application fails fast on Redis connection issues
+  - Consider using blocking mode for critical operations that must eventually succeed
+  - Configure appropriate reconnection strategies based on your network reliability
 
 ## API Documentation
 
-### MurLock(releaseTime: number, ...keyParams: string[])
+### MurLock(releaseTime: number, wait?: number | ((retries: number) => number), ...keyParams: string[])
 
 A method decorator to indicate that a particular method should be locked.
 
 - `releaseTime`: Time in milliseconds after which the lock should be automatically released.
+- `wait` (optional): Time in milliseconds to wait between retry attempts, or a function that calculates wait time based on retry count.
 - `...keyParams`: Method parameters based on which the lock should be made. The format is `paramName.attribute`. If just `paramName` is provided, it will use the `toString` method of that parameter.
 
 ### Configuration Options
 
 Here are the customizable options for `MurLockModule`, allowing you to tailor its behavior to best fit your application's needs:
 
-- **redisOptions:** Configuration settings for the Redis client, such as the connection URL.
+- **redisOptions:** Configuration settings for the Redis client, such as the connection URL and socket options.
 - **wait:** Time in milliseconds to wait before retrying to obtain a lock if the initial attempt fails.
-- **maxAttempts:** The maximum number of attempts to try and acquire a lock before giving up.
+- **maxAttempts:** The maximum number of attempts to try and acquire a lock before giving up (ignored in blocking mode).
 - **logLevel:** Determines the level of logging used within the module. Options include 'none', 'error', 'warn', 'log', or 'debug'.
 - **ignoreUnlockFail (optional):** When set to `true`, the module will not throw an exception if releasing a lock fails. This setting helps in scenarios where failing silently is preferred over interrupting the application flow. Defaults to `false` to ensure that failures are noticed and handled appropriately.
 - **lockKeyPrefix (optional)**: Specifies how lock keys are prefixed, allowing for greater flexibility:
   - **Default**: Uses class and method names as prefixes, e.g., `Userservice:createUser:{userId}`.
   - **Custom**: Set this to 'custom' to define lock keys manually in your service methods, allowing for specific lock key constructions beyond the standard naming.
+- **failFastOnRedisError (optional)**: When set to `true`, the application will exit with code 1 if a Redis connection error occurs. Defaults to `false`.
+- **blocking (optional)**: When set to `true`, the lock acquisition will retry indefinitely until successful. Defaults to `false`.
 
 ### MurLockService
 

@@ -117,6 +117,36 @@ In the example above, the `ConfigModule` and `ConfigService` are used to provide
 
 For more details on usage and configuration, please refer to the API documentation below.
 
+## Overriding Global Wait Per Decorator
+
+ You can override the global wait parameter per decorator, allowing fine-grained retry control:
+
+### Example 1: Dynamic Wait Strategy
+
+```typescript
+@MurLock(
+  5000, 
+  (retries) => (Math.floor(Math.random() * 50) + 50) * retries,
+  'user.id',
+)
+async someFunction(user: User): Promise<void> {
+  // This uses a randomized backoff strategy for retrying lock acquisition.
+}
+```
+
+### Example 2: Fixed Wait Strategy Per Method
+
+```typescript
+@MurLock(5000, 1500, 'user.id')
+async anotherFunction(user: User): Promise<void> {
+  // This will retry every 1500ms instead of global wait.
+}
+```
+
+- If no wait is provided in decorator, MurLock will fallback to global wait from forRoot().
+
+- Allows dynamic retry logic per critical section.
+
 ## Using Custom Lock Key
 
 By default, murlock use class and method name prefix for example Userservice:createUser:{userId}. By setting lockKeyPrefix as 'custom' you can define by yourself manually.

@@ -9,7 +9,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { createClient, RedisClientType } from 'redis';
 import { AsyncStorageService } from './als/als.service';
-import { MurLockException, MurLockRedisException } from './exceptions';
+import { MurLockException } from './exceptions';
 import { MurLockModuleOptions } from './interfaces';
 import { generateUuid } from './utils';
 
@@ -33,16 +33,19 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   ) {}
 
   async onModuleInit() {
-    this.redisClient = createClient(
-      this.options.redisOptions
-    ) as RedisClientType;
-
-    this.redisClient.on('error', (err) => {
-      this.log('error', 'MurLock Redis Client Error', err);
-      throw new MurLockRedisException(
-        `MurLock Redis Client Error: ${err.message}`
-      );
-    });
+    this.redisClient = createClient({
+      ...this.options.redisOptions,
+      socket: {
+        keepAlive: false,
+        reconnectStrategy: (retries) => {
+          const delay = Math.min(retries * 500, 5000);
+          this.log('warn', `MurLock Redis reconnect attempt ${retries}, waiting ${delay} ms...`);
+          return delay;
+        },
+      },
+    }) as RedisClientType;
+    
+    this.registerRedisErrorHandlers();
 
     await this.redisClient.connect();
   }
@@ -87,13 +90,15 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     wait?: number | ((retries: number) => number)
   ): Promise<boolean> {
     this.log('debug', `MurLock Client ID is ${clientId}`);
+    if (this.options.blocking) {
+      return this.blockingLock(lockKey, releaseTime, clientId);
+    }
 
     const attemptLock = async (attemptsRemaining: number): Promise<boolean> => {
       if (attemptsRemaining === 0) {
         throw new MurLockException(
           `Failed to obtain lock for key ${lockKey} after ${this.options.maxAttempts} attempts.`
-        );
-      }
+        );      }
       try {
         const isLockSuccessful = await this.redisClient.sendCommand([
           'EVAL',
@@ -107,7 +112,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
           this.log('log', `Successfully obtained lock for key ${lockKey}`);
           return true;
         } else {
-          const delay = wait
+            const delay = wait
             ? typeof wait === 'function'
               ? wait(this.options.maxAttempts - attemptsRemaining + 1)
               : wait
@@ -121,14 +126,12 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
           return attemptLock(attemptsRemaining - 1);
         }
       } catch (error) {
-        throw new MurLockException(
-          `Unexpected error when trying to obtain lock for key ${lockKey}: ${error.message}`
-        );
+        throw new MurLockException(`Unexpected error when trying to obtain lock for key ${lockKey}: ${error.message}`);
       }
     };
 
-    return attemptLock(this.options.maxAttempts);
-  }
+  return attemptLock(this.options.maxAttempts);
+}
 
   /**
    * Release a lock
@@ -223,4 +226,60 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
       await this.releaseLock(lockKey, clientId);
     }
   }
+
+  private registerRedisErrorHandlers() {
+    this.redisClient.on('error', (err) => {
+      this.log('error', `MurLock Redis Client Error: ${err.message}`);
+  
+      if (this.options.failFastOnRedisError) {
+        this.log('error', 'MurLock Redis entering fail-fast shutdown due to Redis error.');
+        process.exit(1);
+      }
+  
+    });
+  
+    this.redisClient.on('reconnecting', () => {
+      this.log('warn', 'MurLock Redis Client attempting reconnect...');
+    });
+  
+    this.redisClient.on('ready', () => {
+      this.log('log', 'MurLock Redis Client connected and ready.');
+    });
+  
+    this.redisClient.on('end', () => {
+      this.log('warn', 'MurLock Redis Client connection closed.');
+    });
+  }
+
+  /**
+ * Blocking infinite retry lock strategy
+ */
+private async blockingLock(
+  lockKey: string,
+  releaseTime: number,
+  clientId: string,
+): Promise<boolean> {
+  while (true) {
+    try {
+      const isLockSuccessful = await this.redisClient.sendCommand([
+        'EVAL',
+        this.lockScript,
+        '1',
+        lockKey,
+        clientId,
+        releaseTime.toString(),
+      ]);
+      if (isLockSuccessful === 1) {
+        this.log('log', `Successfully obtained lock for key ${lockKey} in blocking mode`);
+        return true;
+      } else {
+        this.log('warn', `Lock busy for key ${lockKey}, waiting ${this.options.wait} ms before next attempt (blocking mode)...`);
+        await this.sleep(this.options.wait);
+      }
+    } catch (error) {
+      this.log('error', `Unexpected error in blocking lock for key ${lockKey}: ${error.message}`);
+      await this.sleep(this.options.wait);
+    }
+  }
+}
 }

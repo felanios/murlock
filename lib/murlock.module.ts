@@ -28,7 +28,10 @@ export class MurLockModule {
         AsyncStorageManagerModule,
         ...(options.imports || [])
       ],
-      providers: [this.createAsyncOptionsProvider(options), MurLockService],
+      providers: [
+        this.createAsyncOptionsProvider(options),
+        MurLockService,
+      ],
       exports: [MurLockService],
     };
   }

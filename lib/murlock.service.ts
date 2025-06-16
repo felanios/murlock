@@ -192,13 +192,13 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     lockKey: string,
     releaseTime: number,
     fn: () => Promise<R>
-  );
+  ): Promise<R>;
   async runWithLock<R>(
     lockKey: string,
     releaseTime: number,
     wait: number | ((retries: number) => number),
     fn: () => Promise<R>
-  );
+  ): Promise<R>;
   async runWithLock<R>(
     lockKey: string,
     releaseTime: number,

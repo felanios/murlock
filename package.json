@@ -8,11 +8,16 @@
   "private": false,
   "main": "dist/index.js",
   "scripts": {
-    "copy-lua": "ncp lib/lua dist/lua/",
+    "copy-lua": "ncp lib/lua dist/lua",
+    "build": "tsc && npm run copy-lua",
     "prepare": "husky install",
     "prebuild": "del-cli ./dist/*",
-    "build": "tsc && npm run copy-lua",
-    "release": "semantic-release"
+    "release": "semantic-release",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+    "test:e2e": "jest --config ./test/jest-e2e.config.js --runInBand"
   },
   "dependencies": {
     "@nestjs/common": ">=10.0.5",
@@ -26,55 +31,59 @@
     "@commitlint/cli": "^18.2.0",
     "@commitlint/config-conventional": "^18.1.0",
     "@commitlint/core": "^18.2.0",
+    "@nestjs/testing": "^10.0.0",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^9.2.1",
     "@semantic-release/npm": "^11.0.1",
+    "@types/jest": "^29.5.0",
     "@types/node": "^20.8.10",
+    "@types/supertest": "^2.0.12",
     "husky": "^8.0.3",
+    "jest": "^29.5.0",
     "ncp": "^2.0.0",
     "semantic-release": "^22.0.6",
+    "supertest": "^6.3.3",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.1",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.2.2"
   },
   "peerDependencies": {
     "@nestjs/common": ">=10.0.5",
     "@nestjs/core": ">=10.0.5"
   },
-  "release": {
-    "branches": [
-      {
-        "name": "master",
-        "channel": "latest",
-        "release": true
-      },
-      {
-        "name": "beta",
-        "channel": "beta",
-        "prerelease": true
-      }
-    ],
-    "plugins": [
-      "@semantic-release/commit-analyzer",
-      "@semantic-release/release-notes-generator",
-      "@semantic-release/npm",
-      "@semantic-release/git"
-    ]
+  "peerDependenciesMeta": {
+    "@nestjs/common": {
+      "optional": false
+    },
+    "@nestjs/core": {
+      "optional": false
+    }
   },
+  "keywords": [
+    "nestjs",
+    "distributed-lock",
+    "redis",
+    "lock",
+    "mutex",
+    "synchronization"
+  ],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/npm",
+    "@semantic-release/git"
+  ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/felanios/murlock.git"
+    "url": "https://github.com/felanios/murlock"
   },
   "bugs": {
     "url": "https://github.com/felanios/murlock/issues"
   },
-  "keywords": [
-    "nestjs",
-    "lock",
-    "murlock",
-    "distributed lock",
-    "redis",
-    "decorator",
-    "microservices"
-  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist/**/*",
     "README.md"

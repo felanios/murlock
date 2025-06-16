@@ -9,7 +9,7 @@ export class MurLockModule {
   static forRoot(options: MurLockModuleOptions): DynamicModule {
     return {
       module: MurLockModule,
-      imports: [AsyncStorageManagerModule.forRoot()],
+      imports: [AsyncStorageManagerModule],
       providers: [
         {
           provide: 'MURLOCK_OPTIONS',
@@ -24,8 +24,14 @@ export class MurLockModule {
   static forRootAsync(options: MurLockModuleAsyncOptions): DynamicModule {
     return {
       module: MurLockModule,
-      imports: [AsyncStorageManagerModule.forRoot(), ...options.imports],
-      providers: [this.createAsyncOptionsProvider(options), MurLockService],
+      imports: [
+        AsyncStorageManagerModule,
+        ...(options.imports || [])
+      ],
+      providers: [
+        this.createAsyncOptionsProvider(options),
+        MurLockService,
+      ],
       exports: [MurLockService],
     };
   }

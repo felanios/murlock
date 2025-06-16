@@ -52,7 +52,10 @@ export function MurLock(
   ) {
     wait = waitOrKeyParam;
   } else {
-    keyParams = [waitOrKeyParam, ...keyParams];
+    keyParams = [
+      ...(waitOrKeyParam === undefined ? [] : [waitOrKeyParam]),
+      ...keyParams,
+    ];
   }
 
   const injectMurlockService = Inject(MurLockService);

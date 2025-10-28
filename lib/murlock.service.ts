@@ -47,6 +47,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     this.redisClient = createClient({
       ...this.options.redisOptions,
       socket: {
+        ...this.options.redisOptions.socket,
         keepAlive: false,
         reconnectStrategy: (retries) => {
           const delay = Math.min(retries * 500, 5000);

@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { Inject } from '@nestjs/common';
 import { MurLockException } from '../exceptions';
 import { MurLockService } from '../murlock.service';
@@ -119,7 +120,7 @@ export function MurLock(
       return lockKeyElements.join(':');
     }
 
-    descriptor.value = async function (...args: any[]) {
+    const wrapped = async function (...args: any[]) {
       const murLockService: MurLockService = this.murlockServiceDecorator;
 
       const lockKey = constructLockKey(
@@ -140,6 +141,17 @@ export function MurLock(
         }
       );
     };
+
+    const metadataKeys =
+      typeof (Reflect as any).getMetadataKeys === 'function'
+        ? (Reflect as any).getMetadataKeys(originalMethod)
+        : [];
+    for (const key of metadataKeys) {
+      const value = (Reflect as any).getMetadata(key, originalMethod);
+      (Reflect as any).defineMetadata(key, value, wrapped);
+    }
+
+    descriptor.value = wrapped;
 
     return descriptor;
   };

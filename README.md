@@ -69,7 +69,15 @@ import { MurLock } from 'murlock';
 @Injectable()
 export class AppService {
   @MurLock(5000, 'userId')
-  async someFunction({ userId, firstName, lastName }: { userId: string, firstName: string, lastName: string} ): Promise<void> {
+  async someFunction({
+    userId,
+    firstName,
+    lastName,
+  }: {
+    userId: string;
+    firstName: string;
+    lastName: string;
+  }): Promise<void> {
     // Some critical section that only one request should be able to execute at a time
   }
 }
@@ -83,7 +91,10 @@ import { MurLock } from 'murlock';
 @Injectable()
 export class AppService {
   @MurLock(5000, '0.userId', '1.transactionId')
-  async someFunction({ userId, firstName, lastName }: UserDTO, { balance, transactionId }: TransactionDTO ): Promise<void> {
+  async someFunction(
+    { userId, firstName, lastName }: UserDTO,
+    { balance, transactionId }: TransactionDTO
+  ): Promise<void> {
     // Some critical section that only one request should be able to execute at a time
   }
 }
@@ -130,7 +141,7 @@ You can override the global wait parameter per decorator, allowing fine-grained 
 
 ```typescript
 @MurLock(
-  5000, 
+  5000,
   (retries) => (Math.floor(Math.random() * 50) + 50) * retries,
   'user.id',
 )
@@ -150,6 +161,66 @@ async anotherFunction(user: User): Promise<void> {
 
 - If no wait is provided in decorator, MurLock will fallback to global wait from forRoot().
 - Allows dynamic retry logic per critical section.
+
+## Decorator Composition
+
+When using `@MurLock` with other decorators (such as `@Transactional` from typeorm-transactional), you may encounter issues with parameter name extraction if the other decorator wraps the method before `@MurLock` is applied.
+
+### Problem
+
+TypeScript decorators execute in bottom-up order. If another decorator wraps the method before `@MurLock`, the parameter names cannot be extracted from the wrapped function:
+
+```typescript
+// This may fail if @Transactional wraps the method before @MurLock executes
+@MurLock(5000, 'userData.id')
+@Transactional()
+async process(userData: { id: string }, options: string[] = []): Promise<any> {
+  // Error: Parameter userData not found in method arguments
+}
+```
+
+### Solution: Using SetParamNames
+
+Use the `SetParamNames` decorator to explicitly specify parameter names. **Important**: `SetParamNames` must be placed **below** `@MurLock` in the code (it will execute before `@MurLock` due to TypeScript's bottom-up decorator execution order):
+
+```typescript
+import { MurLock, SetParamNames } from 'murlock';
+
+class MyService {
+  @MurLock(5000, 'userData.id')
+  @SetParamNames('userData', 'options') // Must be below @MurLock
+  @Transactional()
+  async process(userData: { id: string }, options: string[] = []): Promise<any> {
+    // This will work correctly
+  }
+}
+```
+
+**Decorator Execution Order** (bottom-up):
+
+1. `@Transactional()` executes first and wraps the method
+2. `@SetParamNames` executes second and stores parameter names in metadata
+3. `@MurLock` executes last and reads parameter names from metadata
+
+If you place `@SetParamNames` above `@MurLock`, it will execute after `@MurLock`, and the metadata won't be available when `@MurLock` needs it.
+
+### Alternative: Using Parameter Indices
+
+As a workaround, you can use parameter indices instead of names:
+
+```typescript
+@MurLock(5000, '0.id')  // Uses index 0 for userData
+@Transactional()
+async process(userData: { id: string }, options: string[] = []): Promise<any> {
+  // This works, but name-based keys are more readable
+}
+```
+
+### How It Works
+
+- `SetParamNames` stores parameter names in metadata before the method is wrapped
+- `@MurLock` reads the parameter names from metadata when the function is already wrapped
+- This allows decorator composition to work correctly regardless of execution order
 
 ## Blocking Mode
 
@@ -189,7 +260,7 @@ MurLock includes robust Redis connection handling:
 @Module({
   imports: [
     MurLockModule.forRoot({
-      redisOptions: { 
+      redisOptions: {
         url: 'redis://localhost:6379',
         socket: {
           keepAlive: false,
@@ -222,7 +293,7 @@ import { MurLockModule } from 'murlock';
         wait: configService.get('MURLOCK_WAIT'),
         maxAttempts: configService.get('MURLOCK_MAX_ATTEMPTS'),
         logLevel: configService.get('LOG_LEVEL'),
-        lockKeyPrefix: 'custom'
+        lockKeyPrefix: 'custom',
       }),
       inject: [ConfigService],
     }),
@@ -277,7 +348,7 @@ import { MurLockService } from 'murlock';
 @Injectable()
 export class YourService {
   constructor(private murLockService: MurLockService) {}
-  
+
   // Your methods where you want to use the lock
 }
 ```

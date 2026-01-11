@@ -1,7 +1,51 @@
-import 'reflect-metadata';
 import { Inject } from '@nestjs/common';
+import 'reflect-metadata';
 import { MurLockException } from '../exceptions';
 import { MurLockService } from '../murlock.service';
+
+/**
+ * Metadata key for storing parameter names
+ * This allows decorator composition by preserving parameter names even when methods are wrapped
+ */
+export const PARAM_NAMES_KEY = Symbol('murlock:param-names');
+
+/**
+ * Helper decorator to explicitly set parameter names for a method
+ * Use this when other decorators wrap the method before @MurLock is applied
+ *
+ * **Important**: Due to TypeScript's bottom-up decorator execution order,
+ * `@SetParamNames` must be placed **below** `@MurLock` in the code.
+ *
+ * @example
+ * ```typescript
+ * class MyService {
+ *   @MurLock(5000, 'userData.id')
+ *   @SetParamNames('userData', 'options')  // Must be below @MurLock
+ *   @Transactional()
+ *   async process(userData: { id: string }, options: string[] = []): Promise<any> {
+ *     // ...
+ *   }
+ * }
+ * ```
+ *
+ * Execution order (bottom-up):
+ * 1. @Transactional() wraps the method
+ * 2. @SetParamNames stores parameter names in metadata
+ * 3. @MurLock reads parameter names from metadata
+ *
+ * @param {...string} paramNames The parameter names in order
+ * @returns A decorator function
+ */
+export function SetParamNames(...paramNames: string[]) {
+  return function (
+    target: any,
+    propertyKey: string,
+    descriptor: PropertyDescriptor
+  ): PropertyDescriptor {
+    Reflect.defineMetadata(PARAM_NAMES_KEY, paramNames, target, propertyKey);
+    return descriptor;
+  };
+}
 
 /**
  * Get all parameter names of a function
@@ -10,13 +54,94 @@ import { MurLockService } from '../murlock.service';
  */
 function getParameterNames(func: Function): string[] {
   const STRIP_COMMENTS = /((\/\/.*$)|(\/\*[\s\S]*?\*\/))/gm;
-  const ARGUMENT_NAMES = /([^\s,]+)/g;
 
   const fnStr = func.toString().replace(STRIP_COMMENTS, '');
-  const result = fnStr
-    .slice(fnStr.indexOf('(') + 1, fnStr.indexOf(')'))
-    .match(ARGUMENT_NAMES);
-  return result || [];
+  const paramsStr = fnStr.slice(fnStr.indexOf('(') + 1, fnStr.indexOf(')'));
+
+  if (!paramsStr.trim()) {
+    return [];
+  }
+
+  // Split by comma, but handle nested parentheses and brackets
+  const params: string[] = [];
+  let current = '';
+  let depth = 0;
+  let inString = false;
+  let stringChar = '';
+
+  for (let i = 0; i < paramsStr.length; i++) {
+    const char = paramsStr[i];
+
+    if (!inString && (char === '"' || char === "'" || char === '`')) {
+      inString = true;
+      stringChar = char;
+    } else if (inString && char === stringChar && paramsStr[i - 1] !== '\\') {
+      inString = false;
+    } else if (!inString) {
+      if (char === '(' || char === '[' || char === '{') {
+        depth++;
+      } else if (char === ')' || char === ']' || char === '}') {
+        depth--;
+      } else if (char === ',' && depth === 0) {
+        // Extract parameter name (before = sign if present)
+        const paramName = current.split('=')[0].trim().split(':')[0].trim();
+        if (paramName) {
+          params.push(paramName);
+        }
+        current = '';
+        continue;
+      }
+    }
+
+    current += char;
+  }
+
+  // Handle last parameter
+  if (current.trim()) {
+    const paramName = current.split('=')[0].trim().split(':')[0].trim();
+    if (paramName) {
+      params.push(paramName);
+    }
+  }
+
+  return params;
+}
+
+/**
+ * Get parameter names from function, with fallback to metadata
+ * This handles cases where the function has been wrapped by other decorators
+ * @param {Function} func the function to get the parameters from
+ * @param {any} target the target class
+ * @param {string} propertyKey the property key
+ * @returns {string[]} an array of parameter names
+ */
+function getParameterNamesWithFallback(
+  func: Function,
+  target: any,
+  propertyKey: string
+): string[] {
+  // First, try to get parameter names from the function itself
+  const paramNames = getParameterNames(func);
+
+  // If we got valid parameter names (not empty and not just '...args'), use them
+  if (paramNames.length > 0 && !paramNames.includes('...args')) {
+    return paramNames;
+  }
+
+  // If function is wrapped (e.g., by @Transactional), try to get from metadata
+  // This is the reliable way to get parameter names when decorators wrap methods
+  const metadataParamNames = Reflect.getMetadata(
+    PARAM_NAMES_KEY,
+    target,
+    propertyKey
+  ) as string[] | undefined;
+
+  if (metadataParamNames && metadataParamNames.length > 0) {
+    return metadataParamNames;
+  }
+
+  // Fallback: return empty array (will cause error if name-based key is used)
+  return paramNames;
 }
 
 /**
@@ -65,7 +190,35 @@ export function MurLock(
     injectMurlockService(target, 'murlockServiceDecorator');
 
     const originalMethod = descriptor.value;
-    const methodParameterNames = getParameterNames(originalMethod);
+
+    // Try to get parameter names with fallback to metadata
+    // This handles cases where other decorators have already wrapped the method
+    const methodParameterNames = getParameterNamesWithFallback(
+      originalMethod,
+      target,
+      propertyKey
+    );
+
+    // If we successfully extracted parameter names and they're not already in metadata,
+    // store them for future decorators that might wrap this method
+    if (
+      methodParameterNames.length > 0 &&
+      !methodParameterNames.includes('...args')
+    ) {
+      const existingMetadata = Reflect.getMetadata(
+        PARAM_NAMES_KEY,
+        target,
+        propertyKey
+      );
+      if (!existingMetadata) {
+        Reflect.defineMetadata(
+          PARAM_NAMES_KEY,
+          methodParameterNames,
+          target,
+          propertyKey
+        );
+      }
+    }
 
     function constructLockKey(args: any[], lockKeyPrefix = 'default'): string {
       let lockKeyElements = [];

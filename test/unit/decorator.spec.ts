@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import {
   MurLock,
   PARAM_NAMES_KEY,
+  PARAM_INDEX_MAP_KEY,
   SetParamNames,
 } from '../../lib/decorators/murlock.decorator';
 
@@ -184,6 +185,63 @@ describe('MurLock Decorator', () => {
       const instance = new TestClass();
       expect(instance.process).toBeDefined();
       expect(typeof instance.process).toBe('function');
+    });
+  });
+
+  describe('SetParamNames object format', () => {
+    /**
+     * Tests for the object format of SetParamNames
+     * Allows specifying only needed parameters with explicit index mapping
+     * Format: @SetParamNames({ paramName: index })
+     */
+
+    // Simulate a decorator that wraps methods (like @Transactional)
+    function WrappingDecorator() {
+      return function (
+        target: any,
+        propertyKey: string,
+        descriptor: PropertyDescriptor
+      ) {
+        const originalMethod = descriptor.value;
+        descriptor.value = async function (...args: any[]) {
+          return originalMethod.apply(this, args);
+        };
+        return descriptor;
+      };
+    }
+
+    it('should store object format in PARAM_INDEX_MAP_KEY metadata', () => {
+      class TestClass {
+        // @ts-ignore
+        @MurLock(1000, 'context.tenant')
+        // @ts-ignore
+        @SetParamNames({ context: 2 }) // Only specify the third parameter
+        // @ts-ignore
+        @WrappingDecorator()
+        async process(
+          userData: { id: string },
+          options: string[],
+          context: { tenant: string }
+        ): Promise<any> {
+          return { success: true };
+        }
+      }
+
+      // Object format is stored in PARAM_INDEX_MAP_KEY
+      const indexMap = Reflect.getMetadata(
+        PARAM_INDEX_MAP_KEY,
+        TestClass.prototype,
+        'process'
+      );
+      expect(indexMap).toEqual({ context: 2 });
+
+      // Array format is not stored (WrappingDecorator causes ...args)
+      const paramNames = Reflect.getMetadata(
+        PARAM_NAMES_KEY,
+        TestClass.prototype,
+        'process'
+      );
+      expect(paramNames).toBeUndefined();
     });
   });
 });

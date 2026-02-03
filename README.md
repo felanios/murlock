@@ -181,20 +181,67 @@ async process(userData: { id: string }, options: string[] = []): Promise<any> {
 
 ### Solution: Using SetParamNames
 
-Use the `SetParamNames` decorator to explicitly specify parameter names. **Important**: `SetParamNames` must be placed **below** `@MurLock` in the code (it will execute before `@MurLock` due to TypeScript's bottom-up decorator execution order):
+Use the `SetParamNames` decorator to explicitly specify parameter names. **Important**: `SetParamNames` must be placed **below** `@MurLock` in the code (it will execute before `@MurLock` due to TypeScript's bottom-up decorator execution order).
+
+#### Option 1: Object Format (Recommended)
+
+The object format allows you to specify only the parameters you need, with explicit index mapping. This provides O(1) lookup performance and doesn't require specifying all parameters:
 
 ```typescript
 import { MurLock, SetParamNames } from 'murlock';
 
 class MyService {
   @MurLock(5000, 'userData.id')
-  @SetParamNames('userData', 'options') // Must be below @MurLock
+  @SetParamNames({ userData: 0 }) // Only specify needed params with their indices
   @Transactional()
-  async process(userData: { id: string }, options: string[] = []): Promise<any> {
+  async process(
+    userData: { id: string },
+    options: string[],
+    context: any
+  ): Promise<any> {
+    // This will work correctly - only userData is needed for the lock key
+  }
+}
+```
+
+**Benefits of Object Format:**
+
+- **Partial specification**: Only specify the parameters you actually use in the lock key
+- **Order independent**: Parameter indices are explicit, so declaration order doesn't matter
+- **O(1) lookup**: Direct property access instead of array indexOf search
+- **Self-documenting**: The index mapping clearly shows which argument position each name refers to
+
+```typescript
+// Example: Only need the third parameter for the lock key
+@MurLock(5000, 'context.tenantId')
+@SetParamNames({ context: 2 }) // context is at index 2
+@Transactional()
+async process(userData: any, options: any, context: { tenantId: string }): Promise<any> {
+  // ...
+}
+```
+
+#### Option 2: Array Format (Legacy)
+
+The array format requires specifying ALL parameters in order:
+
+```typescript
+import { MurLock, SetParamNames } from 'murlock';
+
+class MyService {
+  @MurLock(5000, 'userData.id')
+  @SetParamNames('userData', 'options') // Must specify ALL params in order
+  @Transactional()
+  async process(
+    userData: { id: string },
+    options: string[] = []
+  ): Promise<any> {
     // This will work correctly
   }
 }
 ```
+
+> **Note**: The array format uses `indexOf` to find parameters, so all parameters must be specified in the correct order. If you only need one parameter, the object format is recommended.
 
 **Decorator Execution Order** (bottom-up):
 

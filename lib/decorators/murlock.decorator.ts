@@ -367,6 +367,14 @@ export function MurLock(
       (Reflect as any).defineMetadata(key, value, wrapped);
     }
 
+    // Preserve the function name so that NestJS Swagger's ParameterMetadataAccessor
+    // can correctly look up PARAMTYPES_METADATA and ROUTE_ARGS_METADATA
+    // using method.name as the property key.
+    Object.defineProperty(wrapped, 'name', {
+      value: propertyKey,
+      configurable: true,
+    });
+
     descriptor.value = wrapped;
 
     return descriptor;

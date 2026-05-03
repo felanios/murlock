@@ -46,6 +46,18 @@ describe('MurLock Decorator', () => {
     expect(value).toBe('value-b');
   });
 
+  it('should preserve the method name on the wrapped function', () => {
+    class TestClass {
+      @MurLock(1000, 'id')
+      async myMethod(id: string) {}
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(
+      TestClass.prototype,
+      'myMethod'
+    );
+    expect(descriptor?.value.name).toBe('myMethod');
+  });
+
   describe('Issue #67: Parameter name extraction with decorator composition', () => {
     // Simulate a decorator that wraps methods (like @Transactional)
     // This wraps the method with a function that uses ...args, making parameter names unextractable

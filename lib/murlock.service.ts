@@ -22,6 +22,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   private redisClient: RedisClientType;
   private lockScript: string;
   private unlockScript: string;
+  private extendScript: string;
 
   constructor(
     @Inject('MURLOCK_OPTIONS') readonly options: MurLockModuleOptions,
@@ -36,6 +37,10 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
       );
       this.unlockScript = await readFile(
         join(__dirname, './lua/unlock.lua'),
+        'utf8'
+      );
+      this.extendScript = await readFile(
+        join(__dirname, './lua/extend.lua'),
         'utf8'
       );
     } catch (error) {
@@ -85,6 +90,12 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     message: any,
     context?: string
   ): void {
+    // 'none' disables all logging. Without this guard, levels.indexOf('none')
+    // returns -1 and the threshold check below would pass for every message,
+    // causing 'none' to (incorrectly) log everything.
+    if (this.options.logLevel === 'none') {
+      return;
+    }
     const levels: MurLockModuleOptions['logLevel'][] = [
       'debug',
       'log',
@@ -177,6 +188,73 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
+  /**
+   * Extend the TTL of a lock the given client still owns.
+   * @returns {Promise<boolean>} true if the lock was still owned and extended, false otherwise
+   */
+  private async extendLock(
+    lockKey: string,
+    clientId: string,
+    releaseTime: number
+  ): Promise<boolean> {
+    const result = await this.redisClient.sendCommand([
+      'EVAL',
+      this.extendScript,
+      '1',
+      lockKey,
+      clientId,
+      releaseTime.toString(),
+    ]);
+    return result === 1;
+  }
+
+  /**
+   * Start a watchdog timer that periodically extends the lock TTL while the
+   * wrapped operation is still running. Returns a stop function that clears the
+   * timer. No-op (returns a no-op stopper) when `autoExtend` is disabled.
+   */
+  private startWatchdog(
+    lockKey: string,
+    clientId: string,
+    releaseTime: number
+  ): () => void {
+    if (!this.options.autoExtend) {
+      return () => {};
+    }
+
+    const interval =
+      this.options.extendInterval && this.options.extendInterval > 0
+        ? this.options.extendInterval
+        : Math.max(1, Math.floor(releaseTime / 3));
+
+    const timer = setInterval(async () => {
+      try {
+        const extended = await this.extendLock(lockKey, clientId, releaseTime);
+        if (extended) {
+          this.log('debug', `Watchdog extended lock for key ${lockKey}`);
+        } else {
+          this.log(
+            'warn',
+            `Watchdog could not extend lock for key ${lockKey} (ownership lost); stopping watchdog.`
+          );
+          clearInterval(timer);
+        }
+      } catch (error) {
+        this.log(
+          'error',
+          `Watchdog error while extending lock for key ${lockKey}: ${error.message}`
+        );
+      }
+    }, interval);
+
+    // Do not keep the event loop / process alive solely for the watchdog.
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+
+    return () => clearInterval(timer);
+  }
+
   private async acquireLock(
     lockKey: string,
     clientId: string,
@@ -239,9 +317,11 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     this.asyncStorageService.setClientID('clientId', generateUuid());
     const clientId = this.asyncStorageService.get('clientId');
     await this.acquireLock(lockKey, clientId, releaseTime, wait);
+    const stopWatchdog = this.startWatchdog(lockKey, clientId, releaseTime);
     try {
       return await operation();
     } finally {
+      stopWatchdog();
       await this.releaseLock(lockKey, clientId);
     }
   }
@@ -249,12 +329,22 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   private registerRedisErrorHandlers() {
     this.redisClient.on('error', (err) => {
       this.log('error', `MurLock Redis Client Error: ${err.message}`);
-  
-      if (this.options.failFastOnRedisError) {
-        this.log('error', 'MurLock Redis entering fail-fast shutdown due to Redis error.');
-        process.exit(1);
+
+      // NOTE: Runtime Redis errors (including transient network blips) no longer
+      // terminate the process. `failFastOnRedisError` only governs the initial
+      // connection attempt in onModuleInit. Reconnection is handled by the
+      // configured reconnectStrategy. Use `onRedisError` for custom alerting or
+      // fail-fast behavior.
+      if (typeof this.options.onRedisError === 'function') {
+        try {
+          this.options.onRedisError(err);
+        } catch (callbackError) {
+          this.log(
+            'error',
+            `MurLock onRedisError callback threw: ${callbackError.message}`
+          );
+        }
       }
-  
     });
   
     this.redisClient.on('reconnecting', () => {

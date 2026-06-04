@@ -85,4 +85,78 @@ describe('MurLockService (integration)', () => {
     expect(secondLockError).toBeInstanceOf(MurLockException);
     expect(secondLockError.message).toMatch(/Failed to obtain lock|Could not obtain lock/);
   });
+
+  describe('watchdog (autoExtend)', () => {
+    const makeService = async (
+      opts: Partial<MurLockModuleOptions>
+    ): Promise<MurLockService> => {
+      const mgr = new AsyncStorageManager<string>(new AsyncLocalStorage());
+      const svc = new MurLockService(
+        {
+          redisOptions: { url: 'redis://localhost:6379' },
+          wait: 50,
+          maxAttempts: 1,
+          logLevel: 'error',
+          ignoreUnlockFail: true,
+          ...opts,
+        },
+        new AsyncStorageService(mgr)
+      );
+      await svc['onModuleInit']();
+      return svc;
+    };
+
+    it('keeps the lock alive past releaseTime so a competitor cannot acquire it', async () => {
+      const holder = await makeService({ autoExtend: true, extendInterval: 150 });
+      const competitor = await makeService({});
+      const key = 'test:lock:watchdog';
+      await redisClient.del(key);
+
+      let competitorErr: any = null;
+      const holderPromise = holder.runWithLock(key, 500, async () => {
+        // Run for ~3x the releaseTime; the watchdog must keep the lock alive.
+        await new Promise((r) => setTimeout(r, 1500));
+      });
+
+      // Wait well past the original 500ms TTL before the competitor tries.
+      await new Promise((r) => setTimeout(r, 800));
+      try {
+        await competitor.runWithLock(key, 500, async () => {
+          // Must not run: the holder still owns the (extended) lock.
+        });
+      } catch (err) {
+        competitorErr = err;
+      }
+
+      await holderPromise;
+      await holder['onApplicationShutdown']();
+      await competitor['onApplicationShutdown']();
+
+      expect(competitorErr).toBeInstanceOf(MurLockException);
+    }, 10000);
+
+    it('control: without autoExtend the lock expires and a competitor acquires it', async () => {
+      const holder = await makeService({ autoExtend: false });
+      const competitor = await makeService({});
+      const key = 'test:lock:watchdog:control';
+      await redisClient.del(key);
+
+      let competitorRan = false;
+      const holderPromise = holder.runWithLock(key, 500, async () => {
+        await new Promise((r) => setTimeout(r, 1500));
+      });
+
+      // After 800ms the 500ms TTL has lapsed, so the competitor should succeed.
+      await new Promise((r) => setTimeout(r, 800));
+      await competitor.runWithLock(key, 500, async () => {
+        competitorRan = true;
+      });
+
+      await holderPromise;
+      await holder['onApplicationShutdown']();
+      await competitor['onApplicationShutdown']();
+
+      expect(competitorRan).toBe(true);
+    }, 10000);
+  });
 });

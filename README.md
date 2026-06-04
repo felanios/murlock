@@ -295,13 +295,45 @@ When blocking mode is enabled:
 - Each retry will wait for the specified `wait` time
 - Redis errors will be logged but won't stop the retry process
 
+## Auto-Extend (Watchdog)
+
+A lock is created with a fixed TTL (`releaseTime`). If your operation runs **longer** than `releaseTime`, the lock would normally expire while the work is still in progress — at which point another instance could acquire the same lock and break mutual exclusion (and the original holder would then fail to release it).
+
+Enable `autoExtend` to start a watchdog that periodically extends the lock's TTL (only while *this* instance still owns it) for as long as the wrapped operation runs:
+
+```typescript
+@Module({
+  imports: [
+    MurLockModule.forRoot({
+      redisOptions: { url: 'redis://localhost:6379' },
+      wait: 1000,
+      maxAttempts: 3,
+      logLevel: 'log',
+      autoExtend: true,      // keep the lock alive while the operation runs
+      extendInterval: 1000,  // optional; defaults to releaseTime / 3
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+Behavior:
+
+- The TTL is refreshed every `extendInterval` ms (default: `Math.floor(releaseTime / 3)`).
+- Extension is ownership-checked: if the lock is lost (e.g. it expired before the first refresh, or was taken over), the watchdog stops and logs a warning.
+- The watchdog timer is `unref`'d, so it never keeps your process alive on its own.
+- Defaults to `false`, so existing behavior is unchanged.
+
+> **Tip:** This is especially valuable together with `blocking: true`. Blocking mode makes callers queue until the lock frees, but if the current holder runs longer than `releaseTime` the lock still expires underneath it. `autoExtend` keeps the holder's lock valid for the full duration of its work, so "wait for the previous execution to finish" actually holds even for long-running operations.
+
 ## Redis Connection Handling
 
 MurLock includes robust Redis connection handling:
 
 - **Automatic Reconnection**: Implements a reconnection strategy with exponential backoff
 - **Connection Events**: Logs connection status changes (ready, reconnecting, end)
-- **Fail-Fast Option**: Can be configured to exit the application on Redis connection failures
+- **Fail-Fast Option**: Can be configured to throw during startup if the **initial** Redis connection fails
+- **Custom Error Handling**: Provide an `onRedisError` callback to react to runtime Redis errors (alerting, custom fail-fast, etc.)
 
 ```typescript
 @Module({
@@ -317,12 +349,18 @@ MurLock includes robust Redis connection handling:
           },
         },
       },
-      failFastOnRedisError: true, // Exit application on Redis connection failure
+      failFastOnRedisError: true, // Throw on startup if the initial connection fails
+      onRedisError: (err) => {
+        // Optional: custom handling for runtime Redis errors
+        console.error('Redis error:', err.message);
+      },
     }),
   ],
 })
 export class AppModule {}
 ```
+
+> **Note (v5 behavior change):** Runtime Redis `error` events no longer terminate the process. Previously, with `failFastOnRedisError: true`, *any* runtime Redis error (including transient network blips) would call `process.exit(1)`, taking the whole application down mid-request. Now `failFastOnRedisError` applies only to the initial connection attempt; runtime errors are logged, recovery is handled by the reconnect strategy, and you can opt into custom handling via `onRedisError`.
 
 ## Using Custom Lock Key
 
@@ -476,8 +514,11 @@ Here are the customizable options for `MurLockModule`, allowing you to tailor it
 - **lockKeyPrefix (optional)**: Specifies how lock keys are prefixed, allowing for greater flexibility:
   - **Default**: Uses class and method names as prefixes, e.g., `Userservice:createUser:{userId}`.
   - **Custom**: Set this to 'custom' to define lock keys manually in your service methods, allowing for specific lock key constructions beyond the standard naming.
-- **failFastOnRedisError (optional)**: When set to `true`, the application will exit with code 1 if a Redis connection error occurs. Defaults to `false`.
+- **failFastOnRedisError (optional)**: When set to `true`, the application will throw during startup (`onModuleInit`) if the **initial** Redis connection fails. Defaults to `false`. **Note (behavior change):** this option no longer terminates the process on *runtime* Redis errors (e.g. transient network blips). Runtime errors are logged and recovery is handled by the reconnect strategy. Use `onRedisError` for custom runtime handling.
 - **blocking (optional)**: When set to `true`, the lock acquisition will retry indefinitely until successful. Defaults to `false`.
+- **autoExtend (optional)**: When set to `true`, MurLock keeps the lock alive while the wrapped operation is still running by periodically extending its TTL (a "watchdog"). This prevents the lock from expiring mid-execution when an operation runs longer than `releaseTime`, which would otherwise let another instance acquire the same lock and break mutual exclusion. Defaults to `false`.
+- **extendInterval (optional)**: Interval in milliseconds between watchdog TTL extensions. Only used when `autoExtend` is `true`. Defaults to one third of the lock's `releaseTime` (`Math.floor(releaseTime / 3)`), guaranteeing at least two refresh attempts before the TTL would expire.
+- **onRedisError (optional)**: Callback `(error: Error) => void` invoked when the Redis client emits a runtime `error` event. Use it to plug in custom alerting or fail-fast behavior.
 
 ### MurLockService
 

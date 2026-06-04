@@ -33,6 +33,33 @@ export interface MurLockModuleOptions {
    * longer terminates the process on transient runtime errors.
    */
   onRedisError?: (error: Error) => void;
+  /**
+   * When true, locks become reentrant within the same async context: nested
+   * calls to a method locking the same key (directly or transitively) reuse the
+   * outer lock instead of deadlocking. Implemented via AsyncLocalStorage and a
+   * per-key hold counter; the underlying Redis lock is acquired once (outermost
+   * entry) and released when the outermost call completes.
+   *
+   * Defaults to `false` (no behavior change for existing users).
+   */
+  reentrant?: boolean;
+  /**
+   * When true, each lock-key part derived from method arguments is escaped so
+   * that values containing the `:` separator cannot collide (e.g. `a:b` + `c`
+   * vs `a` + `b:c`). Changes the generated key format, so it is opt-in to avoid
+   * breaking existing keys across a rolling deploy.
+   *
+   * Defaults to `false`.
+   */
+  encodeKeyParts?: boolean;
+  /**
+   * When true, retry back-off delays use equal jitter
+   * (`delay/2 + random*delay/2`) to avoid a thundering herd when many workers
+   * wait on the same lock. Applies to both attempt-based and blocking modes.
+   *
+   * Defaults to `false` (deterministic timing preserved).
+   */
+  jitter?: boolean;
 }
 
 export interface MurLockModuleAsyncOptions {

@@ -284,7 +284,17 @@ export function MurLock(
       return methodParameterNames.indexOf(source);
     }
 
-    function constructLockKey(args: any[], lockKeyPrefix = 'default'): string {
+    function constructLockKey(
+      args: any[],
+      lockKeyPrefix = 'default',
+      encodeKeyParts = false
+    ): string {
+      // Escape argument-derived parts so values containing the ':' separator
+      // cannot collide (e.g. 'a:b' + 'c' vs 'a' + 'b:c'). Opt-in via the
+      // `encodeKeyParts` option to preserve existing key formats by default.
+      const encodePart = (value: any) =>
+        encodeKeyParts ? encodeURIComponent(String(value)) : value;
+
       const lockKeyElements: string[] = [];
       if (lockKeyPrefix != 'custom') {
         lockKeyElements.push(target.constructor.name);
@@ -317,11 +327,13 @@ export function MurLock(
               parameterValue !== null &&
               path in parameterValue
             ) {
-              return parameterValue[path];
+              return encodePart(parameterValue[path]);
             }
-            return parameterValue instanceof Object
-              ? parameterValue.toString()
-              : parameterValue;
+            return encodePart(
+              parameterValue instanceof Object
+                ? parameterValue.toString()
+                : parameterValue
+            );
           }
 
           if (lockKeyPrefix == 'custom') {
@@ -341,7 +353,8 @@ export function MurLock(
 
       const lockKey = constructLockKey(
         args,
-        murLockService.options.lockKeyPrefix
+        murLockService.options.lockKeyPrefix,
+        murLockService.options.encodeKeyParts
       );
 
       if (!murLockService) {

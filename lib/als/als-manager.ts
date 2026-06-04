@@ -1,71 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { AsyncLocalStorage } from 'async_hooks';
-import { AsyncStorageManagerException } from '../exceptions';
 
+/**
+ * Thin wrapper around Node's AsyncLocalStorage providing context-scoped
+ * storage. Uses `run()` (never `enterWith()`) so a context is confined to the
+ * async execution it wraps and never leaks into sibling or parent flows.
+ */
 @Injectable()
-export class AsyncStorageManager<T> implements Map<string, T> {
-  constructor(private readonly asyncLocalStorage = new AsyncLocalStorage<Map<string, T>>()) {}
+export class AsyncStorageManager<T> {
+  constructor(
+    private readonly asyncLocalStorage = new AsyncLocalStorage<T>()
+  ) {}
 
-  private getStore(): Map<string, T> {
-    const store = this.asyncLocalStorage.getStore();
-    if (!store) {
-      throw new AsyncStorageManagerException('No active store found');
-    }
-    return store;
+  /** Run `fn` with `store` as the active context for its entire async chain. */
+  run<R>(store: T, fn: () => R): R {
+    return this.asyncLocalStorage.run(store, fn);
   }
 
-  register(): void {
-    this.asyncLocalStorage.enterWith(new Map());
+  /** The active context, or undefined when called outside any `run()`. */
+  getStore(): T | undefined {
+    return this.asyncLocalStorage.getStore();
   }
-
-  runWithNewContext<R, TArgs extends any[]>(fn: (...args: TArgs) => R, ...args: TArgs): R {
-    return this.asyncLocalStorage.run(new Map<string, T>(), fn, ...args);
-  }
-
-  set(key: string, value: T): this {
-    this.getStore().set(key, value);
-    return this;
-  }
-
-  get(key: string): T | undefined {
-    return this.getStore().get(key);
-  }
-
-  clear(): void {
-    return this.getStore().clear();
-  }
-
-  delete(key: string): boolean {
-    return this.getStore().delete(key);
-  }
-
-  forEach(callbackfn: (value: T, key: string, map: Map<string, T>) => void, thisArg?: any): void {
-    return this.getStore().forEach(callbackfn, thisArg);
-  }
-
-  has(key: string): boolean {
-    return this.getStore().has(key);
-  }
-
-  get size(): number {
-    return this.getStore().size;
-  }
-
-  entries(): IterableIterator<[string, T]> {
-    return this.getStore().entries();
-  }
-
-  keys(): IterableIterator<string> {
-    return this.getStore().keys();
-  }
-
-  values(): IterableIterator<T> {
-    return this.getStore().values();
-  }
-
-  [Symbol.iterator](): IterableIterator<[string, T]> {
-    return this.getStore()[Symbol.iterator]();
-  }
-
-  [Symbol.toStringTag]: string = '[object AsyncContext]';
 }

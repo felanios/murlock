@@ -12,15 +12,16 @@ import { MurLockException } from '../../lib/exceptions';
  */
 
 type FakeService = {
-  options: { lockKeyPrefix: 'default' | 'custom' };
+  options: { lockKeyPrefix: 'default' | 'custom'; encodeKeyParts?: boolean };
   runWithLock: jest.Mock;
 };
 
 function makeFakeService(
-  lockKeyPrefix: 'default' | 'custom' = 'default'
+  lockKeyPrefix: 'default' | 'custom' = 'default',
+  encodeKeyParts = false
 ): FakeService {
   return {
-    options: { lockKeyPrefix },
+    options: { lockKeyPrefix, encodeKeyParts },
     // Mirror the real 4-arg signature used by the decorator: (key, releaseTime, wait, fn)
     runWithLock: jest.fn((_key: string, _rt: number, _wait: any, fn: () => any) =>
       fn()
@@ -279,6 +280,38 @@ describe('MurLock lock-key construction', () => {
       await expect(
         instance.process({ id: 'abc' }, [])
       ).rejects.toBeInstanceOf(MurLockException);
+    });
+  });
+
+  describe('encodeKeyParts', () => {
+    class EncService {
+      @MurLock(3000, 'tenant', 'resource')
+      async run(tenant: string, resource: string) {
+        return `${tenant}:${resource}`;
+      }
+    }
+
+    it('escapes the separator in part values when enabled (no collision)', async () => {
+      const instance = new EncService();
+      // 'a:b' + 'c' would collide with 'a' + 'b:c' without encoding.
+      const key = await captureLockKey(
+        instance,
+        'run',
+        ['a:b', 'c'],
+        makeFakeService('default', true)
+      );
+      expect(key).toBe('EncService:run:a%3Ab:c');
+    });
+
+    it('leaves values unescaped by default (format preserved)', async () => {
+      const instance = new EncService();
+      const key = await captureLockKey(
+        instance,
+        'run',
+        ['a:b', 'c'],
+        makeFakeService('default', false)
+      );
+      expect(key).toBe('EncService:run:a:b:c');
     });
   });
 });

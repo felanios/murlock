@@ -8,10 +8,12 @@ import {
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { createClient, RedisClientType } from 'redis';
-import { AsyncStorageService } from './als/als.service';
-import { MurLockException } from './exceptions';
+import { AsyncStorageService, MurLockContext } from './als/als.service';
+import { MurLockException, MurLockRedisException } from './exceptions';
 import { MurLockModuleOptions } from './interfaces';
 import { generateUuid } from './utils';
+
+type ScriptName = 'lock' | 'unlock' | 'extend';
 
 /**
  * A service for MurLock to manage locks
@@ -23,6 +25,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   private lockScript: string;
   private unlockScript: string;
   private extendScript: string;
+  private readonly scriptShas: Partial<Record<ScriptName, string>> = {};
 
   constructor(
     @Inject('MURLOCK_OPTIONS') readonly options: MurLockModuleOptions,
@@ -30,6 +33,8 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   ) {}
 
   async onModuleInit() {
+    this.validateOptions();
+
     try {
       this.lockScript = await readFile(
         join(__dirname, './lua/lock.lua'),
@@ -61,11 +66,12 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
         },
       },
     }) as RedisClientType;
-    
+
     this.registerRedisErrorHandlers();
 
     try {
       await this.redisClient.connect();
+      await this.loadScripts();
     } catch (error) {
       this.log('error', `Failed to connect to Redis: ${error.message}`);
       if (this.options.failFastOnRedisError) {
@@ -81,8 +87,45 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
+  /**
+   * Validate the configured options early so misconfiguration surfaces at
+   * startup instead of as confusing runtime behavior.
+   */
+  private validateOptions(): void {
+    const { maxAttempts, wait, extendInterval } = this.options;
+    if (!Number.isFinite(maxAttempts) || maxAttempts < 1) {
+      throw new MurLockException(
+        `Invalid MurLock option 'maxAttempts': ${maxAttempts} (must be an integer >= 1).`
+      );
+    }
+    if (!Number.isFinite(wait) || wait < 0) {
+      throw new MurLockException(
+        `Invalid MurLock option 'wait': ${wait} (must be a number >= 0).`
+      );
+    }
+    if (
+      extendInterval !== undefined &&
+      (!Number.isFinite(extendInterval) || extendInterval <= 0)
+    ) {
+      throw new MurLockException(
+        `Invalid MurLock option 'extendInterval': ${extendInterval} (must be a number > 0).`
+      );
+    }
+  }
+
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Apply equal jitter (`delay/2 + random*delay/2`) when enabled, to avoid a
+   * thundering herd of workers retrying in lockstep.
+   */
+  private withJitter(delay: number): number {
+    if (!this.options.jitter) {
+      return delay;
+    }
+    return Math.floor(delay / 2 + Math.random() * (delay / 2));
   }
 
   private log(
@@ -108,6 +151,91 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
+   * Preload the Lua scripts into Redis' script cache so subsequent calls can
+   * use EVALSHA (sending only the 40-char SHA) instead of shipping the full
+   * script body each time. Best-effort: on failure we fall back to EVAL.
+   */
+  private async loadScripts(): Promise<void> {
+    try {
+      this.scriptShas.lock = (await this.redisClient.sendCommand([
+        'SCRIPT',
+        'LOAD',
+        this.lockScript,
+      ])) as string;
+      this.scriptShas.unlock = (await this.redisClient.sendCommand([
+        'SCRIPT',
+        'LOAD',
+        this.unlockScript,
+      ])) as string;
+      this.scriptShas.extend = (await this.redisClient.sendCommand([
+        'SCRIPT',
+        'LOAD',
+        this.extendScript,
+      ])) as string;
+    } catch (error) {
+      this.log(
+        'warn',
+        `MurLock could not preload Lua scripts (will fall back to EVAL): ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Run a Lua script via EVALSHA when its SHA is cached, falling back to EVAL.
+   * Recovers transparently from a NOSCRIPT error (script evicted from Redis'
+   * cache) by reloading the SHA and retrying once.
+   */
+  private async evalScript(
+    name: ScriptName,
+    script: string,
+    keys: string[],
+    args: string[]
+  ): Promise<unknown> {
+    const numkeys = keys.length.toString();
+    const sha = this.scriptShas[name];
+    if (sha) {
+      try {
+        return await this.redisClient.sendCommand([
+          'EVALSHA',
+          sha,
+          numkeys,
+          ...keys,
+          ...args,
+        ]);
+      } catch (error) {
+        if (!/NOSCRIPT/i.test(String(error?.message))) {
+          throw error;
+        }
+        // Script was evicted from Redis' cache: reload and retry once.
+        try {
+          const fresh = (await this.redisClient.sendCommand([
+            'SCRIPT',
+            'LOAD',
+            script,
+          ])) as string;
+          this.scriptShas[name] = fresh;
+          return await this.redisClient.sendCommand([
+            'EVALSHA',
+            fresh,
+            numkeys,
+            ...keys,
+            ...args,
+          ]);
+        } catch {
+          // Fall through to inline EVAL below.
+        }
+      }
+    }
+    return await this.redisClient.sendCommand([
+      'EVAL',
+      script,
+      numkeys,
+      ...keys,
+      ...args,
+    ]);
+  }
+
+  /**
    * Attempt to lock a key
    * @param {string} lockKey the key to lock
    * @param {number} releaseTime the time in milliseconds when the lock should be released
@@ -128,26 +256,26 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
       if (attemptsRemaining === 0) {
         throw new MurLockException(
           `Failed to obtain lock for key ${lockKey} after ${this.options.maxAttempts} attempts.`
-        );      }
+        );
+      }
       try {
-        const isLockSuccessful = await this.redisClient.sendCommand([
-          'EVAL',
+        const isLockSuccessful = await this.evalScript(
+          'lock',
           this.lockScript,
-          '1',
-          lockKey,
-          clientId,
-          releaseTime.toString(),
-        ]);
+          [lockKey],
+          [clientId, releaseTime.toString()]
+        );
         if (isLockSuccessful === 1) {
           this.log('log', `Successfully obtained lock for key ${lockKey}`);
           return true;
         } else {
-            const delay = wait
+          const baseDelay = wait
             ? typeof wait === 'function'
               ? wait(this.options.maxAttempts - attemptsRemaining + 1)
               : wait
             : this.options.wait *
               (this.options.maxAttempts - attemptsRemaining + 1);
+          const delay = this.withJitter(baseDelay);
           this.log(
             'warn',
             `Failed to obtain lock for key ${lockKey}, retrying in ${delay} ms...`
@@ -156,12 +284,17 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
           return attemptLock(attemptsRemaining - 1);
         }
       } catch (error) {
-        throw new MurLockException(`Unexpected error when trying to obtain lock for key ${lockKey}: ${error.message}`);
+        if (error instanceof MurLockException) {
+          throw error;
+        }
+        throw new MurLockRedisException(
+          `Unexpected error when trying to obtain lock for key ${lockKey}: ${error.message}`
+        );
       }
     };
 
-  return attemptLock(this.options.maxAttempts);
-}
+    return attemptLock(this.options.maxAttempts);
+  }
 
   /**
    * Release a lock
@@ -169,13 +302,12 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
    * @returns {Promise<void>} a promise that resolves when the lock is released
    */
   private async unlock(lockKey: string, clientId: string): Promise<void> {
-    const result = await this.redisClient.sendCommand([
-      'EVAL',
+    const result = await this.evalScript(
+      'unlock',
       this.unlockScript,
-      '1',
-      lockKey,
-      clientId,
-    ]);
+      [lockKey],
+      [clientId]
+    );
     if (result === 0) {
       if (!this.options.ignoreUnlockFail) {
         throw new MurLockException(`Failed to release lock for key ${lockKey}`);
@@ -197,14 +329,12 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     clientId: string,
     releaseTime: number
   ): Promise<boolean> {
-    const result = await this.redisClient.sendCommand([
-      'EVAL',
+    const result = await this.evalScript(
+      'extend',
       this.extendScript,
-      '1',
-      lockKey,
-      clientId,
-      releaseTime.toString(),
-    ]);
+      [lockKey],
+      [clientId, releaseTime.toString()]
+    );
     return result === 1;
   }
 
@@ -265,6 +395,9 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     try {
       isLockSuccessful = await this.lock(lockKey, releaseTime, clientId, wait);
     } catch (error) {
+      if (error instanceof MurLockException) {
+        throw error;
+      }
       throw new MurLockException(
         `Failed to acquire lock for key ${lockKey}: ${error.message}`
       );
@@ -279,6 +412,9 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     try {
       await this.unlock(lockKey, clientId);
     } catch (error) {
+      if (error instanceof MurLockException) {
+        throw error;
+      }
       throw new MurLockException(
         `Failed to release lock for key ${lockKey}: ${error.message}`
       );
@@ -313,16 +449,89 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
       wait = waitOrFn as number | ((retries: number) => number);
       operation = fn;
     }
-    this.asyncStorageService.registerContext();
-    this.asyncStorageService.setClientID('clientId', generateUuid());
-    const clientId = this.asyncStorageService.get('clientId');
-    await this.acquireLock(lockKey, clientId, releaseTime, wait);
-    const stopWatchdog = this.startWatchdog(lockKey, clientId, releaseTime);
+
+    if (!Number.isFinite(releaseTime) || releaseTime <= 0) {
+      throw new MurLockException(
+        `Invalid releaseTime for key ${lockKey}: ${releaseTime} (must be > 0).`
+      );
+    }
+
+    if (!this.options.reentrant) {
+      // Legacy (non-reentrant) path: a fresh owner token per call, no context.
+      const clientId = generateUuid();
+      await this.acquireLock(lockKey, clientId, releaseTime, wait);
+      const stopWatchdog = this.startWatchdog(lockKey, clientId, releaseTime);
+      try {
+        return await operation();
+      } finally {
+        stopWatchdog();
+        await this.releaseLock(lockKey, clientId);
+      }
+    }
+
+    // Reentrant path: reuse the current context if one is active, otherwise
+    // establish a new one for this (outermost) call.
+    const existing = this.asyncStorageService.getContext();
+    if (existing) {
+      return this.runReentrant(existing, lockKey, releaseTime, wait, operation);
+    }
+    const context: MurLockContext = {
+      clientId: generateUuid(),
+      holds: new Map(),
+    };
+    return this.asyncStorageService.run(context, () =>
+      this.runReentrant(context, lockKey, releaseTime, wait, operation)
+    );
+  }
+
+  /**
+   * Reentrancy-aware execution: if this context already holds `lockKey`, just
+   * increment its depth and run (no Redis round-trip). Otherwise acquire the
+   * lock, run, and release when the outermost holder completes.
+   */
+  private async runReentrant<R>(
+    context: MurLockContext,
+    lockKey: string,
+    releaseTime: number,
+    wait: number | ((retries: number) => number) | undefined,
+    operation: () => Promise<R>
+  ): Promise<R> {
+    const depth = context.holds.get(lockKey) ?? 0;
+
+    if (depth > 0) {
+      // Already held by this context: reentrant entry, skip Redis entirely.
+      context.holds.set(lockKey, depth + 1);
+      try {
+        return await operation();
+      } finally {
+        const current = context.holds.get(lockKey) ?? 1;
+        if (current <= 1) {
+          context.holds.delete(lockKey);
+        } else {
+          context.holds.set(lockKey, current - 1);
+        }
+      }
+    }
+
+    // Outermost acquisition for this key.
+    await this.acquireLock(lockKey, context.clientId, releaseTime, wait);
+    context.holds.set(lockKey, 1);
+    const stopWatchdog = this.startWatchdog(
+      lockKey,
+      context.clientId,
+      releaseTime
+    );
     try {
       return await operation();
     } finally {
-      stopWatchdog();
-      await this.releaseLock(lockKey, clientId);
+      const current = context.holds.get(lockKey) ?? 1;
+      if (current <= 1) {
+        context.holds.delete(lockKey);
+        stopWatchdog();
+        await this.releaseLock(lockKey, context.clientId);
+      } else {
+        context.holds.set(lockKey, current - 1);
+      }
     }
   }
 
@@ -346,49 +555,57 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
         }
       }
     });
-  
+
     this.redisClient.on('reconnecting', () => {
       this.log('warn', 'MurLock Redis Client attempting reconnect...');
     });
-  
+
     this.redisClient.on('ready', () => {
       this.log('log', 'MurLock Redis Client connected and ready.');
     });
-  
+
     this.redisClient.on('end', () => {
       this.log('warn', 'MurLock Redis Client connection closed.');
     });
   }
 
   /**
- * Blocking infinite retry lock strategy
- */
-private async blockingLock(
-  lockKey: string,
-  releaseTime: number,
-  clientId: string,
-): Promise<boolean> {
-  while (true) {
-    try {
-      const isLockSuccessful = await this.redisClient.sendCommand([
-        'EVAL',
-        this.lockScript,
-        '1',
-        lockKey,
-        clientId,
-        releaseTime.toString(),
-      ]);
-      if (isLockSuccessful === 1) {
-        this.log('log', `Successfully obtained lock for key ${lockKey} in blocking mode`);
-        return true;
-      } else {
-        this.log('warn', `Lock busy for key ${lockKey}, waiting ${this.options.wait} ms before next attempt (blocking mode)...`);
-        await this.sleep(this.options.wait);
+   * Blocking infinite retry lock strategy
+   */
+  private async blockingLock(
+    lockKey: string,
+    releaseTime: number,
+    clientId: string
+  ): Promise<boolean> {
+    while (true) {
+      try {
+        const isLockSuccessful = await this.evalScript(
+          'lock',
+          this.lockScript,
+          [lockKey],
+          [clientId, releaseTime.toString()]
+        );
+        if (isLockSuccessful === 1) {
+          this.log(
+            'log',
+            `Successfully obtained lock for key ${lockKey} in blocking mode`
+          );
+          return true;
+        } else {
+          const delay = this.withJitter(this.options.wait);
+          this.log(
+            'warn',
+            `Lock busy for key ${lockKey}, waiting ${delay} ms before next attempt (blocking mode)...`
+          );
+          await this.sleep(delay);
+        }
+      } catch (error) {
+        this.log(
+          'error',
+          `Unexpected error in blocking lock for key ${lockKey}: ${error.message}`
+        );
+        await this.sleep(this.withJitter(this.options.wait));
       }
-    } catch (error) {
-      this.log('error', `Unexpected error in blocking lock for key ${lockKey}: ${error.message}`);
-      await this.sleep(this.options.wait);
     }
   }
-}
 }

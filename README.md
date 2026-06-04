@@ -166,6 +166,8 @@ async anotherFunction(user: User): Promise<void> {
 
 When using `@MurLock` with other decorators (such as `@Transactional` from typeorm-transactional), you may encounter issues with parameter name extraction if the other decorator wraps the method before `@MurLock` is applied.
 
+> **Note on minification / transpilation:** MurLock derives parameter names by parsing the method signature at runtime. Aggressive minifiers/bundlers (terser, esbuild, swc) may rename or strip parameter names, in which case **name-based** key params (e.g. `'userId'`, `'user.id'`) cannot be resolved and the decorator throws `Parameter ... not found`. If you minify your server build, either use **numeric index** key params (e.g. `'0'`, `'0.id'`) — which are always stable — or declare names explicitly with `@SetParamNames` (below).
+
 ### Problem
 
 TypeScript decorators execute in bottom-up order. If another decorator wraps the method before `@MurLock`, the parameter names cannot be extracted from the wrapped function:
@@ -519,6 +521,9 @@ Here are the customizable options for `MurLockModule`, allowing you to tailor it
 - **autoExtend (optional)**: When set to `true`, MurLock keeps the lock alive while the wrapped operation is still running by periodically extending its TTL (a "watchdog"). This prevents the lock from expiring mid-execution when an operation runs longer than `releaseTime`, which would otherwise let another instance acquire the same lock and break mutual exclusion. Defaults to `false`.
 - **extendInterval (optional)**: Interval in milliseconds between watchdog TTL extensions. Only used when `autoExtend` is `true`. Defaults to one third of the lock's `releaseTime` (`Math.floor(releaseTime / 3)`), guaranteeing at least two refresh attempts before the TTL would expire.
 - **onRedisError (optional)**: Callback `(error: Error) => void` invoked when the Redis client emits a runtime `error` event. Use it to plug in custom alerting or fail-fast behavior.
+- **reentrant (optional)**: When set to `true`, locks become reentrant within the same async context: a method that locks a key and (directly or transitively) calls another method locking the **same** key reuses the existing lock instead of deadlocking. The underlying Redis lock is acquired once (outermost entry) and released when the outermost call completes. Defaults to `false`.
+- **encodeKeyParts (optional)**: When set to `true`, each lock-key part derived from method arguments is URL-encoded so values containing the `:` separator cannot collide (e.g. `a:b` + `c` vs `a` + `b:c`). Changes the generated key format, so it is opt-in to avoid breaking existing keys across a rolling deploy. Defaults to `false`.
+- **jitter (optional)**: When set to `true`, retry back-off delays use equal jitter (`delay/2 + random*delay/2`) to avoid a thundering herd when many workers wait on the same lock. Applies to both attempt-based and blocking modes. Defaults to `false`.
 
 ### MurLockService
 

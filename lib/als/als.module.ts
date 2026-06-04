@@ -1,6 +1,6 @@
 import { Module, Global } from '@nestjs/common';
 import { AsyncStorageManager } from './als-manager';
-import { AsyncStorageService } from './als.service';
+import { AsyncStorageService, MurLockContext } from './als.service';
 import { AsyncLocalStorage } from 'async_hooks';
 
 @Global()
@@ -8,9 +8,10 @@ import { AsyncLocalStorage } from 'async_hooks';
   providers: [
     {
       provide: AsyncStorageManager,
-      useFactory: () => {
-        return new AsyncStorageManager<string>(new AsyncLocalStorage<Map<string, string>>());
-      },
+      useFactory: () =>
+        new AsyncStorageManager<MurLockContext>(
+          new AsyncLocalStorage<MurLockContext>()
+        ),
     },
     AsyncStorageService,
   ],

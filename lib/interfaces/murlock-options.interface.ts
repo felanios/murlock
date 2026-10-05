@@ -1,7 +1,27 @@
 import { RedisClientOptions } from 'redis';
+import { MurLockRedisClient } from './murlock-redis-client.interface';
 
 export interface MurLockModuleOptions {
-  redisOptions: RedisClientOptions;
+  /**
+   * Connection settings MurLock uses to build its own client.
+   *
+   * Required unless `client` is supplied. These describe a single endpoint, so
+   * a topology that resolves its endpoint at runtime (Sentinel) cannot be
+   * expressed here — use `client` for that.
+   */
+  redisOptions?: RedisClientOptions;
+  /**
+   * A ready Redis client for MurLock to use instead of creating one.
+   *
+   * Accepts node-redis or ioredis: MurLock only issues raw commands, and both
+   * are normalised internally. This is how Sentinel and Cluster topologies are
+   * reached — the application builds the client it needs and hands it over.
+   *
+   * MurLock does not take ownership: a client supplied this way is left open on
+   * shutdown, because whoever created it may still be using it. Connecting it
+   * is also the caller's business; MurLock only connects clients it built.
+   */
+  client?: MurLockRedisClient | (() => MurLockRedisClient | Promise<MurLockRedisClient>);
   wait: number;
   maxAttempts: number;
   logLevel: 'none' | 'error' | 'warn' | 'log' | 'debug';

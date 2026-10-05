@@ -10,7 +10,7 @@ import { join } from 'path';
 import { createClient, RedisClientType } from 'redis';
 import { AsyncStorageService, MurLockContext } from './als/als.service';
 import { MurLockException, MurLockRedisException } from './exceptions';
-import { MurLockModuleOptions } from './interfaces';
+import { MurLockModuleOptions, MurLockRedisClient } from './interfaces';
 import { generateUuid } from './utils';
 
 type ScriptName = 'lock' | 'unlock' | 'extend';
@@ -22,6 +22,13 @@ type ScriptName = 'lock' | 'unlock' | 'extend';
 export class MurLockService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(MurLockService.name);
   private redisClient: RedisClientType;
+  /**
+   * Whether MurLock built the client. A client handed in through `options.client`
+   * belongs to the application: closing it on our shutdown would pull it out from
+   * under whatever else is using it.
+   */
+  private ownsClient = true;
+
   private lockScript: string;
   private unlockScript: string;
   private extendScript: string;
@@ -54,23 +61,39 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
       );
     }
 
-    this.redisClient = createClient({
-      ...this.options.redisOptions,
-      socket: {
-        ...this.options.redisOptions.socket,
-        keepAlive: false,
-        reconnectStrategy: (retries) => {
-          const delay = Math.min(retries * 500, 5000);
-          this.log('warn', `MurLock Redis reconnect attempt ${retries}, waiting ${delay} ms...`);
-          return delay;
+    if (this.options.client) {
+      // Supplied by the application — typically because its topology (Sentinel,
+      // Cluster) cannot be described by a single endpoint. We borrow it.
+      const supplied =
+        typeof this.options.client === 'function'
+          ? await this.options.client()
+          : this.options.client;
+      this.redisClient = supplied as unknown as RedisClientType;
+      this.ownsClient = false;
+    } else {
+      this.redisClient = createClient({
+        ...this.options.redisOptions,
+        socket: {
+          ...this.options.redisOptions.socket,
+          keepAlive: false,
+          reconnectStrategy: (retries) => {
+            const delay = Math.min(retries * 500, 5000);
+            this.log('warn', `MurLock Redis reconnect attempt ${retries}, waiting ${delay} ms...`);
+            return delay;
+          },
         },
-      },
-    }) as RedisClientType;
+      }) as RedisClientType;
+      this.ownsClient = true;
+    }
 
     this.registerRedisErrorHandlers();
 
     try {
-      await this.redisClient.connect();
+      // Only connect what we built. A supplied client may already be connected,
+      // and connecting it twice is an error in both libraries.
+      if (this.ownsClient) {
+        await this.redisClient.connect();
+      }
       await this.loadScripts();
     } catch (error) {
       this.log('error', `Failed to connect to Redis: ${error.message}`);
@@ -80,8 +103,33 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
+  /**
+   * node-redis calls it `sendCommand`, ioredis calls it `call`. MurLock issues
+   * nothing else, so bridging this one method is all it takes to accept either.
+   *
+   * Resolved per call rather than cached at init: the client can be replaced
+   * after construction (tests do exactly this), and a cached binding would
+   * then point at the wrong one.
+   */
+  private sendCommand(args: string[]): Promise<unknown> {
+    const client = this.redisClient as unknown as MurLockRedisClient;
+    if (typeof client?.sendCommand === 'function') {
+      return client.sendCommand(args);
+    }
+    if (typeof client?.call === 'function') {
+      return client.call(...args);
+    }
+    throw new MurLockException(
+      'The supplied Redis client exposes neither `sendCommand` nor `call`; MurLock cannot issue commands through it.'
+    );
+  }
+
   async onApplicationShutdown(signal?: string) {
     this.log('log', 'Shutting down MurLock Redis client.');
+    if (!this.ownsClient) {
+      // Borrowed client: the application closes it on its own terms.
+      return;
+    }
     if (this.redisClient && this.redisClient.isOpen) {
       await this.redisClient.quit();
     }
@@ -92,7 +140,20 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
    * startup instead of as confusing runtime behavior.
    */
   private validateOptions(): void {
-    const { maxAttempts, wait, extendInterval } = this.options;
+    const { maxAttempts, wait, extendInterval, redisOptions, client } = this.options;
+    // Exactly one source of a connection. Neither leaves nothing to connect to;
+    // both is ambiguous, and silently preferring one would make the ignored
+    // setting look effective.
+    if (!redisOptions && !client) {
+      throw new MurLockException(
+        "MurLock needs either 'redisOptions' or 'client'. Supply 'client' for topologies a single endpoint cannot describe, such as Sentinel."
+      );
+    }
+    if (redisOptions && client) {
+      throw new MurLockException(
+        "MurLock accepts 'redisOptions' or 'client', not both. With 'client' supplied, 'redisOptions' would be ignored."
+      );
+    }
     if (!Number.isFinite(maxAttempts) || maxAttempts < 1) {
       throw new MurLockException(
         `Invalid MurLock option 'maxAttempts': ${maxAttempts} (must be an integer >= 1).`
@@ -157,17 +218,17 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
    */
   private async loadScripts(): Promise<void> {
     try {
-      this.scriptShas.lock = (await this.redisClient.sendCommand([
+      this.scriptShas.lock = (await this.sendCommand([
         'SCRIPT',
         'LOAD',
         this.lockScript,
       ])) as string;
-      this.scriptShas.unlock = (await this.redisClient.sendCommand([
+      this.scriptShas.unlock = (await this.sendCommand([
         'SCRIPT',
         'LOAD',
         this.unlockScript,
       ])) as string;
-      this.scriptShas.extend = (await this.redisClient.sendCommand([
+      this.scriptShas.extend = (await this.sendCommand([
         'SCRIPT',
         'LOAD',
         this.extendScript,
@@ -195,7 +256,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     const sha = this.scriptShas[name];
     if (sha) {
       try {
-        return await this.redisClient.sendCommand([
+        return await this.sendCommand([
           'EVALSHA',
           sha,
           numkeys,
@@ -208,13 +269,13 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
         }
         // Script was evicted from Redis' cache: reload and retry once.
         try {
-          const fresh = (await this.redisClient.sendCommand([
+          const fresh = (await this.sendCommand([
             'SCRIPT',
             'LOAD',
             script,
           ])) as string;
           this.scriptShas[name] = fresh;
-          return await this.redisClient.sendCommand([
+          return await this.sendCommand([
             'EVALSHA',
             fresh,
             numkeys,
@@ -226,7 +287,7 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
         }
       }
     }
-    return await this.redisClient.sendCommand([
+    return await this.sendCommand([
       'EVAL',
       script,
       numkeys,

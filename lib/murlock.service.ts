@@ -117,11 +117,14 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
     // Command object rather than an argument array. Checking `sendCommand`
     // first picks the wrong one for every ioredis client — it does not type
     // check, and it fails on the first command at runtime.
+    // Promise.resolve: ioredis types `sendCommand` as returning `unknown`, and
+    // a supplied client need not promise anything in particular. Normalising
+    // here means callers always get something awaitable.
     if (typeof client?.call === 'function') {
-      return client.call(...args);
+      return Promise.resolve(client.call(...args));
     }
     if (typeof client?.sendCommand === 'function') {
-      return client.sendCommand(args);
+      return Promise.resolve(client.sendCommand(args));
     }
     throw new MurLockException(
       'The supplied Redis client exposes neither `sendCommand` nor `call`; MurLock cannot issue commands through it.'

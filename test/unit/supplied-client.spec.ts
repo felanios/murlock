@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { MurLockService } from '../../lib/murlock.service';
-import { AsyncStorageService } from '../../lib/als/als.service';
+import { AsyncStorageService, MurLockContext } from '../../lib/als/als.service';
 import { AsyncStorageManager } from '../../lib/als/als-manager';
 import { MurLockModuleOptions } from '../../lib/interfaces';
 
@@ -24,7 +24,7 @@ function buildOptions(overrides: Partial<MurLockModuleOptions>): MurLockModuleOp
 
 function buildService(options: MurLockModuleOptions): MurLockService {
   const als = new AsyncStorageService(
-    new AsyncStorageManager<string>(new AsyncLocalStorage())
+    new AsyncStorageManager<MurLockContext>(new AsyncLocalStorage())
   );
   const service = new MurLockService(options, als);
   (service as any).lockScript = 'LOCK';

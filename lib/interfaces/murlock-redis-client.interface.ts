@@ -12,6 +12,18 @@
  * to the application, which already knows its own topology.
  */
 export interface MurLockRedisClient {
+  /*
+   * Parameter and return types are deliberately loose.
+   *
+   * This interface is a structural gate, not a contract: its job is to accept
+   * both libraries, whose signatures genuinely differ — ioredis' `sendCommand`
+   * returns `unknown` and takes an internal Command, node-redis' returns a
+   * promise and takes an array. Describing either precisely rejects the other.
+   * MurLock awaits whatever comes back, so nothing here needs to be narrower.
+   *
+   * `client-compat.spec.ts` assigns real ioredis and node-redis instances to
+   * this type, which is what keeps the looseness honest.
+   */
   /**
    * ioredis: a raw command with spread arguments. Checked FIRST.
    *
@@ -19,12 +31,12 @@ export interface MurLockRedisClient {
    * rather than an argument array — handing it one fails. Preferring `call` is
    * what keeps the two libraries apart, since node-redis has no `call`.
    */
-  call?(...args: any[]): Promise<unknown>;
+  call?(...args: any[]): any;
   /**
    * node-redis: a raw command as a single array. Used only when `call` is
    * absent, for the reason above.
    */
-  sendCommand?(args: any): Promise<unknown>;
+  sendCommand?(args: any, options?: any): any;
 
   connect?(): Promise<unknown>;
   quit?(): Promise<unknown>;

@@ -506,9 +506,48 @@ A method decorator to indicate that a particular method should be locked.
 
 ### Configuration Options
 
+### Sentinel and other topologies
+
+`redisOptions` ultimately describes a single endpoint. A Redis Sentinel setup
+has no such thing: the master is whichever node Sentinel currently says it is,
+and it changes on failover. Point a client at one address and after the first
+failover it is talking to a replica — reads go stale and writes come back
+`READONLY`, with nothing in the configuration to suggest why.
+
+Supply the client instead, and the topology stays the application's business:
+
+```typescript
+import Redis from 'ioredis';
+import { MurLockModule } from 'murlock';
+
+MurLockModule.forRoot({
+  client: new Redis({
+    sentinels: [
+      { host: 'redis-sentinel-0', port: 26379 },
+      { host: 'redis-sentinel-1', port: 26379 },
+      { host: 'redis-sentinel-2', port: 26379 },
+    ],
+    name: 'mymaster',
+    role: 'master',
+    password: process.env.REDIS_PASSWORD,
+  }),
+  wait: 1000,
+  maxAttempts: 3,
+  logLevel: 'warn',
+});
+```
+
+The same applies to Cluster, or to any client you have already configured with
+TLS, custom retry behaviour or connection pooling. MurLock issues nothing but
+raw commands, so it works with whatever you hand it.
+
+Close the client yourself when the application shuts down — MurLock leaves a
+supplied client alone, because it has no way to know what else is using it.
+
 Here are the customizable options for `MurLockModule`, allowing you to tailor its behavior to best fit your application's needs:
 
-- **redisOptions:** Configuration settings for the Redis client, such as the connection URL and socket options.
+- **redisOptions:** Configuration settings for the Redis client, such as the connection URL and socket options. Required unless `client` is supplied.
+- **client (optional):** A ready Redis client for MurLock to use instead of creating one. Supply either this or `redisOptions`, not both. Accepts a client or a factory returning one, and works with node-redis or ioredis — MurLock only issues raw commands and normalises `sendCommand`/`call` internally. MurLock does not take ownership: a client supplied this way is neither connected nor closed by MurLock, since whoever created it may still be using it. See [Sentinel and other topologies](#sentinel-and-other-topologies).
 - **wait:** Time in milliseconds to wait before retrying to obtain a lock if the initial attempt fails.
 - **maxAttempts:** The maximum number of attempts to try and acquire a lock before giving up (ignored in blocking mode).
 - **logLevel:** Determines the level of logging used within the module. Options include 'none', 'error', 'warn', 'log', or 'debug'.

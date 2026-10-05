@@ -44,10 +44,20 @@ function nodeRedisLike() {
   };
 }
 
-/** ioredis shape: the same thing is called `call`, with spread arguments. */
+/**
+ * ioredis shape.
+ *
+ * It has BOTH `call` and `sendCommand` — and that is the whole trap. ioredis'
+ * `sendCommand` takes an internal Command object, not an argument array, so
+ * picking it would fail on the first command. An earlier version of this stub
+ * only had `call`, which let exactly that bug through.
+ */
 function ioredisLike() {
   return {
     call: jest.fn().mockResolvedValue(1),
+    sendCommand: jest.fn(() => {
+      throw new Error('ioredis sendCommand expects a Command object, not an array');
+    }),
     connect: jest.fn().mockResolvedValue(undefined),
     quit: jest.fn().mockResolvedValue(undefined),
     on: jest.fn(),
@@ -82,6 +92,8 @@ describe('supplied client — command normalisation', () => {
     // Spread, not a single array.
     expect(Array.isArray(client.call.mock.calls[0][0])).toBe(false);
     expect(typeof client.call.mock.calls[0][0]).toBe('string');
+    // And emphatically not through ioredis' own sendCommand.
+    expect(client.sendCommand).not.toHaveBeenCalled();
   });
 
   it('reports a client that can do neither', async () => {

@@ -113,11 +113,15 @@ export class MurLockService implements OnModuleInit, OnApplicationShutdown {
    */
   private sendCommand(args: string[]): Promise<unknown> {
     const client = this.redisClient as unknown as MurLockRedisClient;
-    if (typeof client?.sendCommand === 'function') {
-      return client.sendCommand(args);
-    }
+    // `call` first: ioredis has BOTH, but its `sendCommand` takes an internal
+    // Command object rather than an argument array. Checking `sendCommand`
+    // first picks the wrong one for every ioredis client — it does not type
+    // check, and it fails on the first command at runtime.
     if (typeof client?.call === 'function') {
       return client.call(...args);
+    }
+    if (typeof client?.sendCommand === 'function') {
+      return client.sendCommand(args);
     }
     throw new MurLockException(
       'The supplied Redis client exposes neither `sendCommand` nor `call`; MurLock cannot issue commands through it.'

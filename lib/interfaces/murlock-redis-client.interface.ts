@@ -13,12 +13,18 @@
  */
 export interface MurLockRedisClient {
   /**
-   * node-redis exposes this. ioredis instead exposes `call` with the same
-   * meaning; MurLock accepts either and normalises internally.
+   * ioredis: a raw command with spread arguments. Checked FIRST.
+   *
+   * ioredis also has a `sendCommand`, but it takes an internal `Command` object
+   * rather than an argument array — handing it one fails. Preferring `call` is
+   * what keeps the two libraries apart, since node-redis has no `call`.
    */
-  sendCommand?(args: string[]): Promise<unknown>;
-  /** ioredis equivalent of `sendCommand`. */
-  call?(...args: string[]): Promise<unknown>;
+  call?(...args: any[]): Promise<unknown>;
+  /**
+   * node-redis: a raw command as a single array. Used only when `call` is
+   * absent, for the reason above.
+   */
+  sendCommand?(args: any): Promise<unknown>;
 
   connect?(): Promise<unknown>;
   quit?(): Promise<unknown>;

@@ -10,6 +10,7 @@
   "scripts": {
     "copy-lua": "ncp lib/lua dist/lua",
     "build": "tsc && npm run copy-lua",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "prepare": "husky install",
     "prebuild": "del-cli ./dist/*",
     "release": "semantic-release",
@@ -39,6 +40,7 @@
     "@types/node": "^20.8.10",
     "@types/supertest": "^2.0.12",
     "husky": "^8.0.3",
+    "ioredis": "^5.11.1",
     "jest": "^29.5.0",
     "ncp": "^2.0.0",
     "semantic-release": "^22.0.6",

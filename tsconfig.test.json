@@ -1,0 +1,21 @@
+{
+  // Type-checks the test suite alongside lib.
+  //
+  // Needed because jest runs ts-jest with `isolatedModules: true`, which
+  // transpiles without type checking — so nothing in `npm test` would notice a
+  // type error. `client-compat.spec.ts` assigns real ioredis and node-redis
+  // instances to MurLockRedisClient, and that assertion only means something
+  // under a real tsc pass.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["jest", "node"]
+  },
+  //
+  // Scoped to the unit suite on purpose. test/integration and test/e2e carry
+  // ten pre-existing type errors (AsyncLocalStorage generics) that predate this
+  // config; pulling them in would make the check fail for unrelated reasons and
+  // it would simply get switched off. Widen it once those are addressed.
+  "include": ["lib/**/*.ts", "test/unit/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

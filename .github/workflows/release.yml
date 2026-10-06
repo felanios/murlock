@@ -19,8 +19,16 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    # Yayından ÖNCE doğrula. Bu kapı yokken iki sürüm (5.2.0, 5.2.1) bozuk
+    # çıktı; ikisi de npm'e ulaştıktan sonra fark edildi.
+    - name: Typecheck
+      run: npm run typecheck
+
     - name: Build
       run: npm run build
+
+    - name: Unit tests
+      run: npm run test:unit
 
     - name: Release package
       env:

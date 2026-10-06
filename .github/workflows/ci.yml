@@ -1,0 +1,42 @@
+# PR'larda hiçbir doğrulama yoktu. 5.2.0 ve 5.2.1 bu yüzden bozuk yayınlandı:
+# ikisi de yalnızca gerçek bir uygulama pakete karşı derlenince fark edildi.
+#
+# `typecheck` ayrı bir adım çünkü ts-jest `isolatedModules` ile çalışıyor —
+# testler TİP KONTROLÜ YAPMADAN transpile ediliyor. Yani "testler geçti",
+# "derleniyor" demek değil.
+#
+# Entegrasyon ve e2e paketleri burada yok: gerçek bir Redis istiyorlar ve
+# kararsızlar. `test:unit` Redis'siz çalışan ve güvenilen kapsamdır.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - beta
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm run test:unit
